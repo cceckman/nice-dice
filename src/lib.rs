@@ -18,6 +18,34 @@ enum Expression {
     Roll(Dice),
     Modifier(usize),
     Negation(Box<Expression>),
+    Sum(Vec<Expression>),
+}
+
+impl Expression {
+    /// Simplify the expression.
+    pub fn simplify(self) -> Expression {
+        match self {
+            Expression::Roll(_) => self,
+            Expression::Modifier(_) => self,
+            Expression::Negation(expression) => {
+                match expression.simplify() {
+                    Expression::Negation(expression) =>
+                    // Double-negative; unwrap.
+                    {
+                        *expression
+                    }
+                    e => Expression::Negation(Box::new(e)),
+                }
+            }
+            Expression::Sum(mut expressions) => {
+                if expressions.len() == 1 {
+                    expressions.pop().unwrap().simplify()
+                } else {
+                    Expression::Sum(expressions.into_iter().map(|e| e.simplify()).collect())
+                }
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for Expression {
@@ -26,6 +54,26 @@ impl std::fmt::Display for Expression {
             Expression::Roll(dice) => dice.fmt(f),
             Expression::Modifier(n) => n.fmt(f),
             Expression::Negation(expression) => write!(f, "- {expression}"),
+            Expression::Sum(expressions) => {
+                for (i, expr) in expressions.iter().enumerate() {
+                    // When printing a negation in a sum, we substitute the negation's - for the
+                    // sum's +.
+                    let (operator, expr) = match (i, expr) {
+                        (_, Expression::Negation(inner)) => (" - ", &**inner),
+                        (0, e) => ("", e),
+                        (_, e) => (" + ", e),
+                    };
+                    // Don't parenthesize if printing atoms (rolls and modifiers);
+                    // but otherwise, parenthesize to make precedence explicit.
+                    match expr {
+                        Expression::Roll(_) | Expression::Modifier(_) => {
+                            write!(f, "{operator} {expr}")?
+                        }
+                        _ => write!(f, "{operator} ({expr})")?,
+                    }
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -38,13 +86,33 @@ peg::parser! {
         pub(crate) rule dice() -> Dice
             = n:(number()) "d" m:(number()) { Dice{n, m} }
 
-        rule negated() -> Expression
-            = "-" " "? exp:expression() { Expression::Negation(Box::new(exp)) }
+        rule paren_expr() -> Expression
+            = "(" " "* exp:expression() " "* ")" { exp }
 
-        pub(crate) rule expression() -> Expression
-            =   n:negated()
+        #[cache]
+        rule simple_expression() -> Expression
+            =   paren_expr()
             /   d:dice()    { Expression::Roll(d) }
             /   m:number()  { Expression::Modifier(m) }
+
+        rule negated_expression() -> Expression
+            = "-" " "* exp:simple_expression() { Expression::Negation(Box::new(exp)) }
+
+        rule posated_expression() -> Expression
+            = "+" " "* exp:simple_expression() { exp }
+
+        rule signed_expression() -> Expression
+            = " "* e:(posated_expression() / negated_expression()) " "* { e }
+
+        rule sum_expression() -> Expression
+            = init:simple_expression() rest:signed_expression()+ {
+            let mut v = rest;
+            v.insert(0, init);
+            Expression::Sum(v)
+        }
+
+        pub rule expression() -> Expression
+            = exp:(simple_expression() / sum_expression()) { exp.simplify() }
     }
 }
 
@@ -82,8 +150,13 @@ mod tests {
             any::<Dice>().prop_map(Expression::Roll),
             any::<usize>().prop_map(Expression::Modifier),
         ];
-        leaf.prop_recursive(8, 256, 3, |strat| {
-            strat.prop_map(|expr| Expression::Negation(Box::new(expr)))
+        leaf.prop_recursive(3, 16, 3, |strat| {
+            prop_oneof![
+                strat
+                    .clone()
+                    .prop_map(|expr| Expression::Negation(Box::new(expr))),
+                prop::collection::vec(strat, 2..10).prop_map(Expression::Sum),
+            ]
         })
     }
 
@@ -92,7 +165,7 @@ mod tests {
         fn expression_roundtrip(exp in recursive_expression()) {
             let s = exp.to_string();
             let got = dice_notation::expression(&s).unwrap();
-            assert_eq!(got, exp);
+            assert_eq!(got, exp.simplify());
         }
     }
 
@@ -102,7 +175,7 @@ mod tests {
             let s = exp.to_string();
             let s : String = s.chars().filter(|c| *c != ' ').collect();
             let got = dice_notation::expression(&s).unwrap();
-            assert_eq!(got, exp);
+            assert_eq!(got, exp.simplify());
         }
     }
 }
