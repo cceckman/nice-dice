@@ -53,7 +53,15 @@ impl std::fmt::Display for Expression {
         match self {
             Expression::Roll(dice) => dice.fmt(f),
             Expression::Modifier(n) => n.fmt(f),
-            Expression::Negation(expression) => write!(f, "- {expression}"),
+            Expression::Negation(expr) => {
+                // When printing a negation, we let atoms stay unparenthesized, but parenthesize
+                // the rest.
+                // Same rules as other hierarchical expressions.
+                match &**expr {
+                    Expression::Roll(_) | Expression::Modifier(_) => write!(f, "-{expr}"),
+                    _ => write!(f, "-({expr})"),
+                }
+            }
             Expression::Sum(expressions) => {
                 for (i, expr) in expressions.iter().enumerate() {
                     // When printing a negation in a sum, we substitute the negation's - for the
@@ -67,9 +75,9 @@ impl std::fmt::Display for Expression {
                     // but otherwise, parenthesize to make precedence explicit.
                     match expr {
                         Expression::Roll(_) | Expression::Modifier(_) => {
-                            write!(f, "{operator} {expr}")?
+                            write!(f, "{operator}{expr}")?
                         }
-                        _ => write!(f, "{operator} ({expr})")?,
+                        _ => write!(f, "{operator}({expr})")?,
                     }
                 }
                 Ok(())
@@ -89,27 +97,30 @@ peg::parser! {
         rule paren_expr() -> Expression
             = "(" " "* exp:expression() " "* ")" { exp }
 
-        #[cache]
         rule simple_expression() -> Expression
             =   paren_expr()
             /   d:dice()    { Expression::Roll(d) }
             /   m:number()  { Expression::Modifier(m) }
+            /   "-" " "* e:simple_expression() { Expression::Negation(Box::new(e)) }
 
-        rule negated_expression() -> Expression
-            = "-" " "* exp:simple_expression() { Expression::Negation(Box::new(exp)) }
+        rule operator() -> char
+            = " "+ c:['+' | '-'] " "+ { c }
 
-        rule posated_expression() -> Expression
-            = "+" " "* exp:simple_expression() { exp }
-
-        rule signed_expression() -> Expression
-            = " "* e:(posated_expression() / negated_expression()) " "* { e }
+        rule repeated_expression() -> Expression
+            = op:operator() e:simple_expression() {
+                if op == '-' {
+                    Expression::Negation(Box::new(e))
+                } else {
+                    e
+                }
+            }
 
         rule sum_expression() -> Expression
-            = init:simple_expression() rest:signed_expression()+ {
-            let mut v = rest;
-            v.insert(0, init);
-            Expression::Sum(v)
-        }
+            = car:simple_expression() cdr:repeated_expression()+ {
+                let mut v = cdr;
+                v.insert(0, car);
+                Expression::Sum(v)
+            }
 
         pub rule expression() -> Expression
             = exp:(simple_expression() / sum_expression()) { exp.simplify() }
@@ -142,6 +153,44 @@ mod tests {
             let d = dice_notation::dice(&s).unwrap();
             assert_eq!(d, dice);
         }
+    }
+
+    #[test]
+    fn simplify_formats() {
+        for (expand, simple) in [
+            ("-(-1d4)", "1d4"),
+            ("- ( - 1d4   )", "1d4"),
+            (" - ( - 1d4   )", "1d4"),
+            ("3", "3"),
+            ("(2d20)", "2d20"),
+        ] {
+            let d = dice_notation::expression(expand).unwrap();
+            let s = d.to_string();
+            assert_eq!(&s, simple, "got: {} want: {}", &s, simple);
+        }
+    }
+
+    #[test]
+    fn roundtrip_neg_example() {
+        let expr = Expression::Negation(Box::new(Expression::Negation(Box::new(
+            Expression::Roll(Dice { n: 1, m: 4 }),
+        ))));
+        let s = expr.to_string();
+        let simpl = expr.simplify();
+        let got = dice_notation::expression(&s).unwrap();
+        assert_eq!(got, simpl);
+    }
+
+    #[test]
+    fn roundtrip_rolls_example() {
+        let expr = Expression::Sum(vec![
+            Expression::Roll(Dice { n: 1, m: 2 }),
+            Expression::Roll(Dice { n: 3, m: 4 }),
+        ]);
+        let s = expr.to_string();
+        let simpl = expr.simplify();
+        let got = dice_notation::expression(&s).unwrap();
+        assert_eq!(got, simpl);
     }
 
     /// Generate a possibly-recursive Expression.
