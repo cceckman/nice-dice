@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 00d5f32bf0534f68ef612497f2a661b5d12d6247fa1fa35305bba6e52f0ec0a0 # shrinks to exp = Sum([Negation(Roll(Dice { n: 17, m: 11553616904028881374 }))])
+cc 1b4db316878dc8d838b2f13640da47102e56b66d138d0607a2bd9825286cfa53 # shrinks to exp = Sum([Negation(Roll(Dice { n: 930, m: 17227962988692948969 }))])
+cc e3c9ed1928404fb8172361f60f42cf9190b5c355968eed5d188403e52f10ee07 # shrinks to exp = Negation(Negation(Roll(Dice { n: 0, m: 0 })))
+cc 8f991ca29db47a4b388390f4f26c71111bd068da1236328948c34481395d5f5b # shrinks to exp = Negation(Negation(Roll(Dice { n: 0, m: 0 })))
