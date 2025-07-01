@@ -1,3 +1,18 @@
+//! Utilities for working with dice notation.
+
+use wasm_bindgen::prelude::*;
+
+use dice_notation::expression;
+
+/// Demo: parse and canonicalize (simplify) the dice expression.
+#[wasm_bindgen]
+pub fn canonicalize(input: &str) -> String {
+    match expression(input) {
+        Err(e) => format!("failed to parse: {e}"),
+        Ok(v) => v.simplify().to_string(),
+    }
+}
+
 /// A roll of a number of dice of a given size: NdM.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
