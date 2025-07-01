@@ -104,7 +104,7 @@ peg::parser! {
             /   "-" " "* e:simple_expression() { Expression::Negation(Box::new(e)) }
 
         rule operator() -> char
-            = " "+ c:['+' | '-'] " "+ { c }
+            = " "* c:['+' | '-'] " "* { c }
 
         rule repeated_expression() -> Expression
             = op:operator() e:simple_expression() {
@@ -123,7 +123,7 @@ peg::parser! {
             }
 
         pub rule expression() -> Expression
-            = exp:(simple_expression() / sum_expression()) { exp.simplify() }
+            = " "* exp:(sum_expression() / simple_expression()) " "* { exp }
     }
 }
 
@@ -156,15 +156,16 @@ mod tests {
     }
 
     #[test]
-    fn simplify_formats() {
+    fn simplifying_formats() {
         for (expand, simple) in [
-            ("-(-1d4)", "1d4"),
-            ("- ( - 1d4   )", "1d4"),
-            (" - ( - 1d4   )", "1d4"),
+            ("- ( - 1d4   )", "-(-1d4)"),
+            ("1 - ( - 1d4   )", "1 - (-1d4)"),
             ("3", "3"),
             ("(2d20)", "2d20"),
         ] {
-            let d = dice_notation::expression(expand).unwrap();
+            let Ok(d) = dice_notation::expression(expand) else {
+                panic!("failed to parse \"{expand}\"")
+            };
             let s = d.to_string();
             assert_eq!(&s, simple, "got: {} want: {}", &s, simple);
         }
@@ -176,7 +177,7 @@ mod tests {
             Expression::Roll(Dice { n: 1, m: 4 }),
         ))));
         let s = expr.to_string();
-        let simpl = expr.simplify();
+        let simpl = expr;
         let got = dice_notation::expression(&s).unwrap();
         assert_eq!(got, simpl);
     }
@@ -184,11 +185,11 @@ mod tests {
     #[test]
     fn roundtrip_rolls_example() {
         let expr = Expression::Sum(vec![
-            Expression::Roll(Dice { n: 1, m: 2 }),
-            Expression::Roll(Dice { n: 3, m: 4 }),
+            Expression::Roll(Dice { n: 0, m: 0 }),
+            Expression::Roll(Dice { n: 0, m: 0 }),
         ]);
         let s = expr.to_string();
-        let simpl = expr.simplify();
+        let simpl = expr;
         let got = dice_notation::expression(&s).unwrap();
         assert_eq!(got, simpl);
     }
@@ -214,7 +215,7 @@ mod tests {
         fn expression_roundtrip(exp in recursive_expression()) {
             let s = exp.to_string();
             let got = dice_notation::expression(&s).unwrap();
-            assert_eq!(got, exp.simplify());
+            assert_eq!(got, exp);
         }
     }
 
@@ -224,7 +225,7 @@ mod tests {
             let s = exp.to_string();
             let s : String = s.chars().filter(|c| *c != ' ').collect();
             let got = dice_notation::expression(&s).unwrap();
-            assert_eq!(got, exp.simplify());
+            assert_eq!(got, exp);
         }
     }
 }
