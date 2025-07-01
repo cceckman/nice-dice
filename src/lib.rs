@@ -94,13 +94,16 @@ peg::parser! {
         pub(crate) rule dice() -> Dice
             = n:(number()) "d" m:(number()) { Dice{n, m} }
 
+        rule modifier() -> usize
+          = "+"? n:number() { n }
+
         rule paren_expr() -> Expression
             = "(" " "* exp:expression() " "* ")" { exp }
 
         rule simple_expression() -> Expression
             =   paren_expr()
             /   d:dice()    { Expression::Roll(d) }
-            /   m:number()  { Expression::Modifier(m) }
+            /   m:modifier()  { Expression::Modifier(m) }
             /   "-" " "* e:simple_expression() { Expression::Negation(Box::new(e)) }
 
         rule operator() -> char
@@ -160,8 +163,8 @@ mod tests {
         for (expand, simple) in [
             ("- ( - 1d4   )", "-(-1d4)"),
             ("1 - ( - 1d4   )", "1 - (-1d4)"),
-            ("3", "3"),
             ("(2d20)", "2d20"),
+            ("+5", "5"),
         ] {
             let Ok(d) = dice_notation::expression(expand) else {
                 panic!("failed to parse \"{expand}\"")
