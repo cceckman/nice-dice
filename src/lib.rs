@@ -7,6 +7,8 @@ use dice_notation::expression;
 mod reduced;
 pub use reduced::ReducedExpression;
 
+pub mod analysis;
+
 /// Demo: parse, reduce, and canonicalize the dice expression.
 #[wasm_bindgen]
 pub fn canonicalize(input: &str) -> String {
