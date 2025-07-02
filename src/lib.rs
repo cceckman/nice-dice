@@ -1,10 +1,11 @@
 //! Utilities for working with dice notation.
 
-use std::collections::{BTreeMap, VecDeque};
-
 use wasm_bindgen::prelude::*;
 
 use dice_notation::expression;
+
+mod reduced;
+pub use reduced::ReducedExpression;
 
 /// Demo: parse, reduce, and canonicalize the dice expression.
 #[wasm_bindgen]
@@ -39,129 +40,10 @@ enum Expression {
 }
 
 impl Expression {
-    /// Lexically simplify the expression.
-    fn simplify(self) -> Expression {
-        match self {
-            Expression::Roll(_) => self,
-            Expression::Modifier(_) => self,
-            Expression::Negation(expression) => {
-                match expression.simplify() {
-                    Expression::Negation(expression) =>
-                    // Double-negative; unwrap.
-                    {
-                        *expression
-                    }
-                    e => Expression::Negation(Box::new(e)),
-                }
-            }
-            Expression::Sum(mut expressions) => {
-                if expressions.len() == 1 {
-                    expressions.pop().unwrap().simplify()
-                } else {
-                    Expression::Sum(expressions.into_iter().map(|e| e.simplify()).collect())
-                }
-            }
-        }
-    }
-
     /// Reduce and canonicalize the expression.
-    ///
-    /// Reduction:
-    /// - The expression is flattened: parentheses are stripped and negations distributed.
-    /// - Positive and negative modifiers are combined (summed).
-    /// - Positive (adding) dice are combined with positive dice of the same size.
-    /// - Negative (subtracting) dice are combined with negative dice of the same size.
-    ///
-    /// Note that positive and negative dice are not combined _with each other_.
-    /// The distribution of `1d20 - 1d20` is not the same as the distribution of `0d20`.
-    ///
-    /// Canonicalization:
-    /// Terms are ordered by decreasing die size, and by positive then negative within a size;
-    /// e.g. `2d20 - 1d20 + 5d10 - 7d10 + 1`.
     pub fn canonicalize(self) -> Expression {
-        // Positive and negative dice, accumulated.
-        let mut positives: BTreeMap<usize, usize> = Default::default();
-        let mut negatives: BTreeMap<usize, usize> = Default::default();
-        let mut modifier: isize = 0;
-
-        let mut queue: VecDeque<Expression> = [self].into_iter().collect();
-        while let Some(e) = queue.pop_front() {
-            match e {
-                Expression::Roll(Dice { n, m }) => {
-                    *positives.entry(m).or_default() += n;
-                }
-                Expression::Modifier(n) => modifier += n as isize,
-                Expression::Sum(expressions) => queue.extend(expressions),
-                Expression::Negation(boxed) => {
-                    match *boxed {
-                        // Double-negative becomes just the positive.
-                        Expression::Negation(expression) => queue.push_front(*expression),
-                        // Distribute the negation across all the sub-expressions.
-                        Expression::Sum(expressions) => queue.extend(
-                            expressions
-                                .into_iter()
-                                .map(|v| Expression::Negation(Box::new(v))),
-                        ),
-                        Expression::Roll(Dice { n, m }) => *negatives.entry(m).or_default() += n,
-                        Expression::Modifier(n) => modifier -= n as isize,
-                    }
-                }
-            }
-        }
-
-        let mut expressions = Vec::new();
-
-        {
-            fn make_dice((&m, &n): (&usize, &usize)) -> Option<Dice> {
-                if m > 0 && n > 0 {
-                    Some(Dice { n, m })
-                } else {
-                    None
-                }
-            }
-
-            let mut positives = positives.iter().rev().filter_map(make_dice);
-            let mut negatives = negatives.iter().rev().filter_map(make_dice);
-            // Manually zip, maintaining largest to smallest die order.
-            let mut next_pos = positives.next();
-            let mut next_neg = negatives.next();
-
-            while let (Some(pos), Some(neg)) = (next_pos, next_neg) {
-                if neg.m > pos.m {
-                    expressions.push(Expression::Negation(Box::new(Expression::Roll(neg))));
-                    next_neg = negatives.next();
-                    continue;
-                } else {
-                    expressions.push(Expression::Roll(pos));
-                    next_pos = positives.next();
-                    continue;
-                }
-            }
-            // At the end of the above loop, at least one of "positives" or "negatives" is exhausted.
-            if let Some(pos) = next_pos {
-                expressions.push(Expression::Roll(pos));
-                expressions.extend(positives.map(Expression::Roll))
-            }
-            if let Some(neg) = next_neg {
-                expressions.push(Expression::Negation(Box::new(Expression::Roll(neg))));
-                expressions.extend(
-                    negatives.map(|neg| Expression::Negation(Box::new(Expression::Roll(neg)))),
-                );
-            }
-        }
-        if modifier < 0 {
-            expressions.push(Expression::Negation(Box::new(Expression::Modifier(
-                modifier.unsigned_abs(),
-            ))));
-        } else if modifier > 0 {
-            expressions.push(Expression::Modifier(modifier as usize));
-        }
-
-        match expressions.len() {
-            0 => Expression::Modifier(0),
-            1 => expressions.pop().unwrap(),
-            _ => Expression::Sum(expressions),
-        }
+        let reduced: ReducedExpression = self.into();
+        reduced.into()
     }
 }
 
@@ -286,23 +168,6 @@ mod tests {
             let Ok(d) = dice_notation::expression(expand) else {
                 panic!("failed to parse \"{expand}\"")
             };
-            let s = d.to_string();
-            assert_eq!(&s, simple, "got: {} want: {}", &s, simple);
-        }
-    }
-
-    #[test]
-    fn canonicalize() {
-        for (expand, simple) in [
-            ("4 - 1", "3"),
-            ("1d20 + 1d20", "2d20"),
-            ("4 + 1d4 - 3 + (2d20 + 5) + 1d20", "3d20 + 1d4 + 6"),
-            ("1d4 - (1d4 - (1d4 + 3))", "2d4 - 1d4 + 3"),
-        ] {
-            let Ok(d) = dice_notation::expression(expand) else {
-                panic!("failed to parse \"{expand}\"")
-            };
-            let d = d.canonicalize();
             let s = d.to_string();
             assert_eq!(&s, simple, "got: {} want: {}", &s, simple);
         }
