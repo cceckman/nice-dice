@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Dicer</title>
+    <script src="app.js" type="module"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+</head>
+
+<body>
+        <form method="post" id="input">
+            <label for="formula">Dice notation: </label><input type="text" name="formula" id="formula" value="1d20+7"/>
+            <input type="submit" />
+
+            <p>Parsed as: <span style="font-family: monospace;" id="parsed"></span><p>
+        </form>
+</body>
+
+</html>
