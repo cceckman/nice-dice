@@ -23,9 +23,9 @@ impl Simulate for Dice {
 }
 
 /// Statistics gathered from a population of samples.
-struct SampleStats {
-    mean: f64,
-    standard_deviation: f64,
+pub struct SampleStats {
+    pub mean: f64,
+    pub standard_deviation: f64,
 
     /// Frequency table: how often each value occurs in the population.
     /// Buckets are contiguous, starting from minimum_value.
@@ -34,6 +34,19 @@ struct SampleStats {
 }
 
 impl SampleStats {
+    /// Returns an iterator over (value, count of occurances) tuples.
+    ///
+    /// Values are guaranteed to be contiguous, though counts may be zero.
+    pub fn frequencies(&self) -> impl Iterator<Item = (isize, usize)> + use<'_> {
+        self.frequency_by_value
+            .iter()
+            .enumerate()
+            .map(|(i, &count)| {
+                let n = (i as isize) + self.minimum_value;
+                (n, count)
+            })
+    }
+
     /// Simulate the expression to collect metrics.
     pub fn simulate_and_compute<E: Simulate, R: rand::Rng + ?Sized>(
         e: &E,
@@ -99,43 +112,6 @@ impl SampleStats {
             minimum_value,
         }
     }
-
-    //
-    ///// Compute the statistics of a sample population.
-    //pub fn compute(population: &[isize]) -> PopulationStats {
-    //    let mut min = 0;
-    //    let mut frequency_by_value = VecDeque::new();
-    //    for &value in population.iter() {
-    //        while value < min {
-    //            frequency_by_value.push_front(0);
-    //            min -= 1;
-    //        }
-    //        let bucket : usize = (value - min).try_into().expect("must be a positive bucket");
-    //        while frequency_by_value.len() <= bucket {
-    //            frequency_by_value.push_back(0);
-    //        }
-    //        frequency_by_value.ins
-    //    }
-    //
-    //
-    //
-    //
-    //    let pop: f64 = (population.len()) as f64;
-    //    let sum: f64 = population.iter().map(|v| *v as f64).sum();
-    //    let mean: f64 = sum / pop;
-    //
-    //    let dev_squared = |v: &isize| -> f64 {
-    //        let diff = (*v as f64) - mean;
-    //        diff * diff
-    //    };
-    //
-    //    let standard_deviation = f64::sqrt(population.iter().map(dev_squared).sum::<f64>() / pop);
-    //
-    //    PopulationStats {
-    //        mean,
-    //        standard_deviation,
-    //    }
-    //}
 }
 
 /// Analytic solutions to questions about an expression.
@@ -247,6 +223,26 @@ mod tests {
 
         let got_count = got_freq.iter().sum::<usize>();
         assert_eq!(got_count, count);
+    }
+
+    #[test]
+    fn frequency() {
+        // Use a PRNG with a known seed; even though we're looking at "random numbers", this is
+        // still a deterministic test.
+        let count = 100;
+        let mut rng = rand_pcg::Pcg64::seed_from_u64(3278);
+        let e: ReducedExpression = dice_notation::expression("1d20+10")
+            .expect("should parse")
+            .into();
+        let stats = SampleStats::simulate_and_compute(&e, &mut rng, count);
+
+        for (i, count) in stats.frequencies() {
+            if (11..=30).contains(&i) {
+                assert!(count > 0, "count for {i} was zero");
+            } else {
+                assert_eq!(count, 0, "count for {i} was too high: {count}");
+            }
+        }
     }
 
     #[test]
