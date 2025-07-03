@@ -7,7 +7,7 @@ use dice_notation::expression;
 mod reduced;
 pub use reduced::ReducedExpression;
 
-pub mod analysis;
+pub mod math;
 
 /// Demo: parse, reduce, and canonicalize the dice expression.
 #[wasm_bindgen]

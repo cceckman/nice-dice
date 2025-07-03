@@ -1,8 +1,13 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::{Dice, Expression, analysis::Analytic};
+use rand::Rng;
+
+use crate::{Dice, Expression, math::Analytic, math::Simulate};
 
 /// A dice expresion in reduced and canonicalized form.
+///
+/// This is the main form to work with, as it avoids recursive descent down an Expression. Most of
+/// the useful traits are only implemented on ReducedExpression, to encourage this.
 ///
 /// Reduction:
 /// - The expression is flattened: parentheses are stripped and negations distributed.
@@ -40,6 +45,7 @@ fn optional_summation<'a>(
         // that means we need to return "unbounded" too.
         .unwrap_or(Some(0))
 }
+
 impl Analytic for ReducedExpression {
     fn max(&self) -> Option<isize> {
         let positive = optional_summation(self.positives.iter(), Dice::max)?;
@@ -53,10 +59,18 @@ impl Analytic for ReducedExpression {
         Some(positive - negative + self.modifier)
     }
 
-    fn expected_value(&self) -> f32 {
-        let positive: f32 = self.positives.iter().map(|v| v.expected_value()).sum();
-        let negative: f32 = self.negatives.iter().map(|v| v.expected_value()).sum();
-        positive - negative + (self.modifier as f32)
+    fn expected_value(&self) -> f64 {
+        let positive: f64 = self.positives.iter().map(|v| v.expected_value()).sum();
+        let negative: f64 = self.negatives.iter().map(|v| v.expected_value()).sum();
+        positive - negative + (self.modifier as f64)
+    }
+}
+
+impl Simulate for ReducedExpression {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> isize {
+        let positive: isize = self.positives.iter().map(|d| d.sample(rng)).sum();
+        let negative: isize = self.negatives.iter().map(|d| d.sample(rng)).sum();
+        positive - negative + self.modifier
     }
 }
 
@@ -174,9 +188,9 @@ impl std::fmt::Display for ReducedExpression {
 
 #[cfg(test)]
 mod tests {
-    use crate::{analysis::Analytic, dice_notation};
+    use crate::dice_notation;
 
-    use super::ReducedExpression;
+    use super::*;
 
     #[test]
     fn canonicalize() {
