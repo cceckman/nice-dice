@@ -1,8 +1,13 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use rand::Rng;
+// use rand::Rng;
 
-use crate::{Dice, Expression, math::Analytic, math::Simulate};
+use crate::{
+    Dice,
+    Expression,
+    discrete::{Distributable, Distribution},
+    // math::{Analytic, Simulate},
+};
 
 /// A dice expresion in reduced and canonicalized form.
 ///
@@ -46,7 +51,16 @@ fn optional_summation<'a>(
         .unwrap_or(Some(0))
 }
 
-impl Analytic for ReducedExpression {
+impl Distributable for ReducedExpression {
+    fn distribution(&self) -> crate::discrete::Distribution {
+        let positive_distrs = self.positives.iter().map(|v| v.distribution());
+        let negative_distrs = self.negatives.iter().map(|v| -v.distribution());
+        positive_distrs.chain(negative_distrs).sum::<Distribution>()
+            + Distribution::modifier(self.modifier)
+    }
+}
+
+/*impl Analytic for ReducedExpression {
     fn max(&self) -> Option<isize> {
         let positive = optional_summation(self.positives.iter(), Dice::max)?;
         let negative = optional_summation(self.negatives.iter(), Dice::min)?;
@@ -64,15 +78,15 @@ impl Analytic for ReducedExpression {
         let negative: f64 = self.negatives.iter().map(|v| v.expected_value()).sum();
         positive - negative + (self.modifier as f64)
     }
-}
+}*/
 
-impl Simulate for ReducedExpression {
+/*impl Simulate for ReducedExpression {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> isize {
         let positive: isize = self.positives.iter().map(|d| d.sample(rng)).sum();
         let negative: isize = self.negatives.iter().map(|d| d.sample(rng)).sum();
         positive - negative + self.modifier
     }
-}
+}*/
 
 impl From<Expression> for ReducedExpression {
     fn from(value: Expression) -> Self {
@@ -188,6 +202,8 @@ impl std::fmt::Display for ReducedExpression {
 
 #[cfg(test)]
 mod tests {
+    use num::rational::Ratio;
+
     use crate::dice_notation;
 
     use super::*;
@@ -246,6 +262,32 @@ mod tests {
                 diff < 0.00001,
                 "got: {got_ev} want: {want_ev} for: {expr} canon: {canon}"
             )
+        }
+    }
+
+    #[test]
+    fn distribution_1d4_mirror() {
+        let e = "1d4 - 1d4 + 3";
+        let want = [
+            (0, 1), // 1-4,
+            (1, 2), // 2-4,1-3,
+            (2, 3), // 3-4,2-3,1-2
+            (3, 4), // x = y
+            (4, 3), // 4-3,3-2,2-1
+            (5, 2),
+            (6, 1),
+        ];
+        let canon: ReducedExpression = dice_notation::expression(e).unwrap().into();
+        let d = canon.distribution();
+        assert_eq!(d.total(), 16);
+        for (v, p) in want {
+            assert_eq!(
+                d.probability(v),
+                Ratio::new(p, 16),
+                "for value {v}, got {}, want {p};\n{:?}",
+                d.probability(v),
+                d
+            );
         }
     }
 }

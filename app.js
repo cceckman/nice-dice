@@ -1,4 +1,4 @@
-import init, { canonicalize } from "./pkg/dicer.js";
+import init, { canonicalize, distribution_table } from "./pkg/dicer.js";
 
 async function run() {
     await init(); // wasm_bindgen-provided
@@ -11,8 +11,8 @@ async function run() {
         e.preventDefault()
 
         // TODO: Can we have this run async?
-        let result = canonicalize(formula.value);
-        parsed.textContent = result;
+        let result = distribution_table(formula.value);
+        parsed.innerHTML = result;
     })
 }
 

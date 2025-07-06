@@ -1,5 +1,6 @@
 //! Utilities for working with dice notation.
 
+use discrete::Distributable;
 use wasm_bindgen::prelude::*;
 
 use dice_notation::expression;
@@ -7,7 +8,8 @@ use dice_notation::expression;
 mod reduced;
 pub use reduced::ReducedExpression;
 
-pub mod math;
+pub mod discrete;
+// pub mod math;
 
 /// Demo: parse, reduce, and canonicalize the dice expression.
 #[wasm_bindgen]
@@ -16,6 +18,17 @@ pub fn canonicalize(input: &str) -> String {
         Err(e) => format!("failed to parse: {e}"),
         Ok(v) => v.canonicalize().to_string(),
     }
+}
+
+/// Get the distribution of the expression as an HTML table.
+#[wasm_bindgen]
+pub fn distribution_table(input: &str) -> String {
+    let e = match expression(input) {
+        Err(e) => return maud::html!(p { "Error: " (e) }).into_string(),
+        Ok(v) => v,
+    };
+    let r: ReducedExpression = e.into();
+    r.distribution().html_table().into()
 }
 
 /// A roll of a number of dice of a given size: NdM.
