@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, ops::Neg};
 
 use num::rational::Ratio;
 
-use crate::{Dice, ReducedExpression};
+use crate::Dice;
 
 /// A computed distribution for a bounded dice expression.
 /// ("bounded": does not support exploding dice.)
@@ -63,6 +63,11 @@ impl Distribution {
             .iter()
             .enumerate()
             .map(|(index, &occurrences)| ((index as isize + self.offset), occurrences))
+    }
+
+    /// The minimum value that appears in this distribution.
+    pub fn min(&self) -> isize {
+        self.offset
     }
 
     /// Format the distribution as an HTML table.

@@ -10,8 +10,10 @@ async function run() {
     input.addEventListener("submit", (e) => {
         e.preventDefault()
 
+        let entries = formula.value.split(",");
+
         // TODO: Can we have this run async?
-        let result = distribution_table(formula.value);
+        let result = distribution_table(entries);
         parsed.innerHTML = result;
     })
 }

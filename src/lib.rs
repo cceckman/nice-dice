@@ -1,6 +1,9 @@
 //! Utilities for working with dice notation.
 
+use std::isize;
+
 use discrete::Distributable;
+use num::{ToPrimitive, rational::Ratio};
 use wasm_bindgen::prelude::*;
 
 use dice_notation::expression;
@@ -22,13 +25,67 @@ pub fn canonicalize(input: &str) -> String {
 
 /// Get the distribution of the expression as an HTML table.
 #[wasm_bindgen]
-pub fn distribution_table(input: &str) -> String {
-    let e = match expression(input) {
-        Err(e) => return maud::html!(p { "Error: " (e) }).into_string(),
-        Ok(v) => v,
+pub fn distribution_table(inputs: Vec<String>) -> String {
+    let e: Result<Vec<_>, _> = inputs.iter().map(|e| expression(e)).collect();
+    let expressions: Vec<ReducedExpression> = match e {
+        Err(e) => {
+            return maud::html!(p { "Error: " (e) }).into_string();
+        }
+        Ok(e) => e.into_iter().map(|v| v.into()).collect(),
     };
-    let r: ReducedExpression = e.into();
-    r.chart().into()
+    let distrs: Vec<_> = expressions
+        .iter()
+        .map(ReducedExpression::distribution)
+        .collect();
+    let strings: Vec<_> = expressions
+        .into_iter()
+        .map(|v| {
+            let e: Expression = v.into();
+            e.to_string()
+        })
+        .collect();
+
+    // We need to know the minimum value, maximum value, and maximum frequency.
+    let min = distrs
+        .iter()
+        .fold(isize::MAX, |acc, dist| std::cmp::min(acc, dist.min()));
+    let rows = (min..)
+        .map(|value| -> (isize, Vec<f64>) {
+            (
+                value,
+                distrs
+                    .iter()
+                    .map(|distr| {
+                        let prob = distr.probability(value);
+                        Ratio::to_f64(&prob).unwrap()
+                    })
+                    .collect(),
+            )
+        })
+        .take_while(|(_, row)| row.iter().any(|&v: &f64| v != 0.0))
+        .collect::<Vec<_>>();
+    let max = rows
+        .iter()
+        .flat_map(|(_, v)| v.iter())
+        .fold(0.0, |acc, v| if acc > *v { acc } else { *v });
+
+    // TODO: Legend
+    maud::html! {
+        table class="charts-css column [ show-data-on-hover data-start ] show-heading show-labels" style="--labels-size: 10pt"{
+            thead {
+                @for name in strings { th scope="col" { (name) } }
+            }
+            @for (value, row) in rows.into_iter() {
+                tr {
+                    th scope="row" { (value) }
+                    @for freq in row {
+                        @let size = freq / max;
+                        td style=(format!("--size: {}", size)) { span class="data" { (format!("{freq:.2}")) }}
+                    }
+                }
+            }
+        }
+    }.into()
 }
 
 /// A roll of a number of dice of a given size: NdM.
