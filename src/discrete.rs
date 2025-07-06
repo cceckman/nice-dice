@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, ops::Neg};
 
 use num::rational::Ratio;
 
-use crate::Dice;
+use crate::{Dice, ReducedExpression};
 
 /// A computed distribution for a bounded dice expression.
 /// ("bounded": does not support exploding dice.)
@@ -58,7 +58,7 @@ impl Distribution {
     }
 
     /// Iterator over (value, occurrences) tuples in this distribution.
-    fn occurrences(&self) -> impl Iterator<Item = (isize, usize)> + use<'_> {
+    pub fn occurrences(&self) -> impl Iterator<Item = (isize, usize)> + use<'_> {
         self.occurrence_by_value
             .iter()
             .enumerate()

@@ -28,7 +28,7 @@ pub fn distribution_table(input: &str) -> String {
         Ok(v) => v,
     };
     let r: ReducedExpression = e.into();
-    r.distribution().html_table().into()
+    r.chart().into()
 }
 
 /// A roll of a number of dice of a given size: NdM.
