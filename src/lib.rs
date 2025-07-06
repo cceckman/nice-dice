@@ -1,7 +1,5 @@
 //! Utilities for working with dice notation.
 
-use std::isize;
-
 use discrete::Distributable;
 use num::{ToPrimitive, rational::Ratio};
 use wasm_bindgen::prelude::*;
@@ -12,7 +10,6 @@ mod reduced;
 pub use reduced::ReducedExpression;
 
 pub mod discrete;
-// pub mod math;
 
 /// Demo: parse, reduce, and canonicalize the dice expression.
 #[wasm_bindgen]
