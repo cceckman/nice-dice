@@ -1,4 +1,4 @@
-import init, { canonicalize, distribution_table } from "./pkg/dicer.js";
+import init, { distribution_table } from "./pkg/dicer.js";
 
 async function run() {
     await init(); // wasm_bindgen-provided

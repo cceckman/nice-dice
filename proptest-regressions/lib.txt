@@ -12,3 +12,5 @@ cc e062f498e1967889bcb5bf7482c5e0218c8b59730028f2e0f6d40a3e6ba9602a # shrinks to
 cc d2f0f03913793eb31a01d0804ed71e01f57434fbd43967052aa3aa061c0f2cf0 # shrinks to exp = Product(Sum([]), Die(0))
 cc 4a2f7a46a0d1be77c4dfc7ed14cf3b2df122a34dca068efb9c899e50e66700f3 # shrinks to exp = Sum([Sum([Die(0), Die(0)]), Die(0)])
 cc c65bcdfcc15811c248102bd3f1273f202404378aeba8bd6de4ff38902135fc16 # shrinks to exp = Sum([Sum([Die(0), Die(0)]), Die(0)])
+cc 98cf8119d8857e5f7db54be457366cfa9c8a82dbc5a2e4a8e6063d0560d4d5af # shrinks to exp = Product(Die(0), Product(Die(0), Die(0)))
+cc 790e604f0fb8a7a33719f6d69e9a369801b591ba6d2271395475af6232e119a5 # shrinks to exp = Product(Product(Die(0), Die(0)), Die(0))

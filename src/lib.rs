@@ -1,33 +1,68 @@
 //! Utilities for working with dice notation.
 
-use num::{ToPrimitive, rational::Ratio};
+use std::str::FromStr;
+
+use discrete::{Distributable, Distribution};
+use maud::PreEscaped;
+use peg::{error::ParseError, str::LineCol};
 use wasm_bindgen::prelude::*;
 
 pub mod discrete;
-/*
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("parse error; in expression {0}; {1}")]
+    ParseError(String, ParseError<LineCol>),
+    #[error("count cannot be negative; in expression {0}")]
+    NegativeCount(String),
+    #[error("kept values are fewer than the count; in expression {0}")]
+    KeepTooFew(String),
+    #[error("denominator contains 0; in expression {0}")]
+    DivideByZero(String),
+}
+
 /// Get the distribution of the expression as an HTML table.
 #[wasm_bindgen]
 pub fn distribution_table(inputs: Vec<String>) -> String {
-    let e: Result<Vec<_>, _> = inputs.iter().map(|e| expression(e)).collect();
+    match distribution_table_inner(inputs) {
+        Ok(v) => v,
+        Err(e) => maud::html!(
+            p{ "Error: " (e) }
+        ),
+    }
+    .into()
+}
+
+fn distribution_table_inner(inputs: Vec<String>) -> Result<PreEscaped<String>, Error> {
+    fn get_distr(s: &String) -> Result<Distribution, Error> {
+        let e: Expression = s.parse().map_err(|e| Error::ParseError(s.to_owned(), e))?;
+        e.distribution()
+    }
+
+    use web_sys::console;
+
+    console::log_1(&format!("got {} inputs", inputs.len()).into());
+    let distrs: Result<Vec<Distribution>, _> = inputs.iter().map(get_distr).collect();
+    let distrs = distrs?;
+    console::log_1(&format!("got {} outputs", distrs.len()).into());
 
     // We need to know the minimum value, maximum value, and maximum frequency.
     let min = distrs
         .iter()
         .fold(isize::MAX, |acc, dist| std::cmp::min(acc, dist.min()));
-    let rows = (min..)
+    let max = distrs
+        .iter()
+        .fold(isize::MIN, |acc, dist| std::cmp::max(acc, dist.max()));
+    let rows = (min..=max)
         .map(|value| -> (isize, Vec<f64>) {
             (
                 value,
                 distrs
                     .iter()
-                    .map(|distr| {
-                        let prob = distr.probability(value);
-                        Ratio::to_f64(&prob).unwrap()
-                    })
+                    .map(|distr| distr.probability_f64(value))
                     .collect(),
             )
         })
-        .take_while(|(_, row)| row.iter().any(|&v: &f64| v != 0.0))
         .collect::<Vec<_>>();
     let max = rows
         .iter()
@@ -35,10 +70,10 @@ pub fn distribution_table(inputs: Vec<String>) -> String {
         .fold(0.0, |acc, v| if acc > *v { acc } else { *v });
 
     // TODO: Legend
-    maud::html! {
+    Ok(maud::html! {
         table class="charts-css column [ show-data-on-hover data-start ] show-heading show-labels" style="--labels-size: 10pt"{
             thead {
-                @for name in strings { th scope="col" { (name) } }
+                @for name in inputs { th scope="col" { (name) } }
             }
             @for (value, row) in rows.into_iter() {
                 tr {
@@ -50,8 +85,8 @@ pub fn distribution_table(inputs: Vec<String>) -> String {
                 }
             }
         }
-    }.into()
-}*/
+    })
+}
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
@@ -59,6 +94,17 @@ enum Ranker {
     All,
     Highest(usize),
     Lowest(usize),
+}
+
+impl Ranker {
+    /// The minimum count of values required by this ranker.
+    fn count(&self) -> usize {
+        match self {
+            Ranker::All => 0,
+            Ranker::Highest(n) => *n,
+            Ranker::Lowest(n) => *n,
+        }
+    }
 }
 
 impl std::fmt::Display for Ranker {
@@ -111,7 +157,7 @@ enum Expression {
     },
     Product(Box<Expression>, Box<Expression>),
     Sum(Vec<Expression>),
-    //Floor(Box<Expression>, Box<Expression>),
+    Floor(Box<Expression>, Box<Expression>),
     //Ceiling(Box<Expression>, Box<Expression>),
     Comparison(Box<Expression>, ComparisonOp, Box<Expression>),
 }
@@ -119,6 +165,14 @@ enum Expression {
 impl Expression {
     fn with_paren(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({self})")
+    }
+}
+
+impl FromStr for Expression {
+    type Err = ParseError<LineCol>;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(dice_notation::expression(s)?.simplify())
     }
 }
 
@@ -145,6 +199,9 @@ impl Expression {
             },
             Expression::Product(a, b) => {
                 Expression::Product(Box::new(a.simplify()), Box::new(b.simplify()))
+            }
+            Expression::Floor(a, b) => {
+                Expression::Floor(Box::new(a.simplify()), Box::new(b.simplify()))
             }
             Expression::Sum(expressions) => {
                 let mut es = Vec::new();
@@ -222,6 +279,37 @@ impl std::fmt::Display for Expression {
                         | Expression::Die(_)
                         | Expression::Repeated { .. }
                         | Expression::Negated(_)
+                        | Expression::Product(_, _)
+                        | Expression::Floor(_, _)
+                ) {
+                    b.fmt(f)
+                } else {
+                    b.with_paren(f)
+                }
+            }
+            Expression::Floor(a, b) => {
+                if matches!(
+                    &**a,
+                    Expression::Modifier(_)
+                        | Expression::Die(_)
+                        | Expression::Repeated { .. }
+                        | Expression::Negated(_)
+                ) {
+                    a.fmt(f)?
+                } else {
+                    a.with_paren(f)?
+                };
+
+                write!(f, " /_ ")?;
+
+                if matches!(
+                    &**b,
+                    Expression::Modifier(_)
+                        | Expression::Die(_)
+                        | Expression::Repeated { .. }
+                        | Expression::Negated(_)
+                        | Expression::Product(_, _)
+                        | Expression::Floor(_, _)
                 ) {
                     b.fmt(f)
                 } else {
@@ -241,6 +329,7 @@ impl std::fmt::Display for Expression {
                         Expression::Modifier(_)
                         | Expression::Die(_)
                         | Expression::Repeated { .. }
+                        | Expression::Floor(_, _)
                         | Expression::Product(_, _) => e.fmt(f),
                         _ => e.with_paren(f),
                     }
@@ -289,19 +378,19 @@ peg::parser! {
             = n:number() { Expression::Modifier(n) }
 
         rule paren() -> Expression
-            = "(" e:expression() ")" { e }
-            / "[" e:expression() "]" { e }
-            / "{" e:expression() "}" { e }
+            = "(" space() e:expression() space() ")" { e }
+            // / "[" e:expression() "]" { e }
+            // / "{" e:expression() "}" { e }
 
         rule repeatable() -> Expression
-            = die() / paren()
+            = paren() / die()
 
         rule repetitions() -> Expression
             = n:number() { Expression::Modifier(n) }
             / paren()
 
         rule repeat() -> Expression
-            = count:repetitions() expr:repeatable() rank:ranker()? {
+            = count:repetitions() space() expr:repeatable() rank:ranker()? {
                 Expression::Repeated{count: Box::new(count), value: Box::new(expr), ranker: rank.unwrap_or(Ranker::All)} }
 
         rule ranker() -> Ranker
@@ -311,12 +400,12 @@ peg::parser! {
         rule space() = quiet!{[' ' | '\n' | '\r' | '\t']*}
 
         rule subterm() -> Expression
-            =   die() / repeat() / modifier() / paren()
-            /   "-" e:(die() / repeat() / modifier() / paren()) { Expression::Negated(Box::new(e)) }
+            =   repeat() / die() / modifier() / paren()
+            /   "-" e:(repeat() / die() / modifier() / paren()) { Expression::Negated(Box::new(e)) }
 
         rule term() -> Expression
-            = e1:subterm() space() "*" space() e2:subterm() { Expression::Product(Box::new(e1), Box::new(e2)) }
-            // e1:subterm() space() "/" space() e2:subterm() { Expression::Floor(e1, e2) }
+            = e1:subterm() space() "*" space() e2:term() { Expression::Product(Box::new(e1), Box::new(e2)) }
+            / e1:subterm() space() "/_" space() e2:term() { Expression::Floor(Box::new(e1), Box::new(e2)) }
             // e1:subterm() space() "/^" space() e2:subterm() { Expression::Ceiling(e1, e2) }
             / subterm()
 
@@ -329,17 +418,23 @@ peg::parser! {
             / term()
 
         rule compare_op() -> ComparisonOp
-            = ">" { ComparisonOp::Gt }
-            / (">=" / "≥") { ComparisonOp::Ge }
+            // Note: order matters! Match the longer >= sequences first.
+            = (">=" / "≥") { ComparisonOp::Ge }
+            / ">" { ComparisonOp::Gt }
             / "=" { ComparisonOp::Eq }
             / ("<=" / "≤") { ComparisonOp::Le }
             / "<" { ComparisonOp::Lt }
 
+        // TODO: There's a few mechanics that involve fancier conditionals:
+        // - save for half damage
+        // - critical hit, critical miss
+        // Consider... {expr} (cmp expr){value} (cmp expr){value}
+        // or some other special grammar for this.
         rule comparison() -> Expression
             = a:sum() space() op:compare_op() space() b:sum() { Expression::Comparison(Box::new(a), op, Box::new(b)) }
             / sum()
 
-        pub rule expression() -> Expression
+        pub(crate) rule expression() -> Expression
             = comparison()
     }
 }
@@ -351,14 +446,14 @@ mod tests {
 
     #[test]
     fn sole_die() {
-        let got = dice_notation::expression("d6").unwrap();
+        let got: Expression = "d6".parse().unwrap();
         let want = Expression::Die(6);
         assert_eq!(got, want);
     }
 
     #[test]
     fn several_dice() {
-        let got = dice_notation::expression("1d20").unwrap();
+        let got: Expression = "1d20".parse().unwrap();
         let want = Expression::Repeated {
             count: Box::new(Expression::Modifier(1)),
             value: Box::new(Expression::Die(20)),
@@ -369,14 +464,28 @@ mod tests {
 
     #[test]
     fn modifier() {
-        let got = dice_notation::expression("3").unwrap();
+        let got: Expression = "3".parse().unwrap();
         let want = Expression::Modifier(3);
         assert_eq!(got, want);
     }
 
     #[test]
+    fn multiply_chain() {
+        let got: Expression = "3 * 4 * 5".parse().unwrap();
+        let want = Expression::Product(
+            Box::new(Expression::Modifier(3)),
+            Box::new(Expression::Product(
+                Box::new(Expression::Modifier(4)),
+                Box::new(Expression::Modifier(5)),
+            )),
+        );
+
+        assert_eq!(got, want);
+    }
+
+    #[test]
     fn disadvantage() {
-        let got = dice_notation::expression("2d20kl").unwrap();
+        let got: Expression = "2d20kl".parse().unwrap();
         let want = Expression::Repeated {
             count: Box::new(Expression::Modifier(2)),
             value: Box::new(Expression::Die(20)),
@@ -387,7 +496,7 @@ mod tests {
 
     #[test]
     fn stats_roll() {
-        let got = dice_notation::expression("4d6kh3").unwrap();
+        let got: Expression = "4d6kh3".parse().unwrap();
         let want = Expression::Repeated {
             count: Box::new(Expression::Modifier(4)),
             value: Box::new(Expression::Die(6)),
@@ -398,14 +507,14 @@ mod tests {
 
     #[test]
     fn negative() {
-        let got = dice_notation::expression("-4").unwrap();
+        let got: Expression = "-4".parse().unwrap();
         let want = Expression::Negated(Box::new(Expression::Modifier(4)));
         assert_eq!(got, want);
     }
 
     #[test]
     fn multiply() {
-        let got = dice_notation::expression("4 * d6").unwrap();
+        let got: Expression = "4 * d6".parse().unwrap();
         let want = Expression::Product(
             Box::new(Expression::Modifier(4)),
             Box::new(Expression::Die(6)),
@@ -415,20 +524,38 @@ mod tests {
 
     #[test]
     fn sum() {
-        let got = dice_notation::expression("d4 + d6").unwrap();
+        let got: Expression = "d4 + d6".parse().unwrap();
         let want = Expression::Sum(vec![Expression::Die(4), Expression::Die(6)]);
         assert_eq!(got, want);
     }
 
     #[test]
     fn compare() {
-        let got = dice_notation::expression("d4 < d6").unwrap();
+        let got: Expression = "d4 < d6".parse().unwrap();
         let want = Expression::Comparison(
             Box::new(Expression::Die(4)),
             ComparisonOp::Lt,
             Box::new(Expression::Die(6)),
         );
         assert_eq!(got, want);
+    }
+
+    #[test]
+    fn spell_damage() {
+        for expr in [
+            // fireball, 5th level
+            "(1d20+3 >= 17) * 2d20",
+            // eldritch blast, 5th level
+            "2 ( (1d20+3 >= 17) * 2d20)",
+            // sacred flame; save
+            "(1d20+2 <= 15) * 2d8",
+            // fireball, 3rd level, save for half damage
+            "((1d20+2 <= 15) + 1) * (8d6) /_ 2",
+        ] {
+            let _: Expression = expr
+                .parse()
+                .unwrap_or_else(|_| panic!("failure to parse: {expr}"));
+        }
     }
 
     /// Generate a possibly-recursive Expression.
@@ -460,7 +587,7 @@ mod tests {
         #[test]
         fn expression_roundtrip(exp in recursive_expression()) {
             let s = exp.to_string();
-            let got = dice_notation::expression(&s).unwrap();
+            let got: Expression = s.parse().unwrap();
             assert_eq!(got.simplify(), exp.simplify());
         }
     }
@@ -470,7 +597,7 @@ mod tests {
         fn expression_without_space(exp in recursive_expression()) {
             let s = exp.to_string();
             let s : String = s.chars().filter(|c| *c != ' ').collect();
-            let got = dice_notation::expression(&s).unwrap();
+            let got: Expression = s.parse().unwrap();
             let got_simpl = got.clone().simplify();
             let want_simpl = exp.simplify();
             assert_eq!(got_simpl, want_simpl, "\n{got}\n{s}");
