@@ -90,6 +90,27 @@ impl Distribution {
             .sum()
     }
 
+    /// Clean up the distribution by removing extraneous zero-valued entries.
+    pub fn clean(&mut self) {
+        let leading_zeros = self
+            .occurrence_by_value
+            .iter()
+            .take_while(|&&f| f == 0)
+            .count();
+        if leading_zeros > 0 {
+            self.occurrence_by_value = self.occurrence_by_value[leading_zeros..].into();
+            self.offset += leading_zeros as isize;
+        }
+        let trailing_zeros = self
+            .occurrence_by_value
+            .iter()
+            .rev()
+            .take_while(|&&f| f == 0)
+            .count();
+        self.occurrence_by_value
+            .truncate(self.occurrence_by_value.len() - trailing_zeros);
+    }
+
     /// Add the given occurrences to the values table.
     fn add_occurrences(&mut self, value: isize, occurrences: usize) {
         if value < self.offset {
@@ -313,32 +334,49 @@ fn comparison(a: Distribution, op: ComparisonOp, b: Distribution) -> Distributio
     }
 }
 
-/// A type for which a Distribution can be computed.
-pub trait Distributable {
-    fn distribution(&self) -> Result<Distribution, Error>;
-}
+impl Expression {
+    /// Retrieve the distribution for the expression.
+    pub fn distribution(&self) -> Result<Distribution, Error> {
+        self.distribution_internal().map(|mut v| {
+            v.clean();
+            v
+        })
+    }
 
-impl Distributable for Expression {
-    fn distribution(&self) -> Result<Distribution, Error> {
+    fn distribution_internal(&self) -> Result<Distribution, Error> {
         match self {
             Expression::Modifier(m) => Ok(Distribution::modifier(*m as isize)),
             Expression::Die(d) => Ok(Distribution::die(*d)),
-            Expression::Negated(expression) => Ok(-(expression.distribution()?)),
+            Expression::Negated(expression) => Ok(-(expression.distribution_internal()?)),
             Expression::Repeated {
                 count,
                 value,
                 ranker,
-            } => repeat(self, count.distribution()?, value.distribution()?, ranker),
-            Expression::Product(a, b) => Ok(product(a.distribution()?, b.distribution()?)),
-            Expression::Floor(a, b) => floor(self, a.distribution()?, b.distribution()?),
+            } => repeat(
+                self,
+                count.distribution_internal()?,
+                value.distribution_internal()?,
+                ranker,
+            ),
+            Expression::Product(a, b) => Ok(product(
+                a.distribution_internal()?,
+                b.distribution_internal()?,
+            )),
+            Expression::Floor(a, b) => {
+                floor(self, a.distribution_internal()?, b.distribution_internal()?)
+            }
             Expression::Sum(expressions) => {
-                let terms: Result<Vec<_>, _> =
-                    expressions.iter().map(|e| e.distribution()).collect();
+                let terms: Result<Vec<_>, _> = expressions
+                    .iter()
+                    .map(|e| e.distribution_internal())
+                    .collect();
                 Ok(terms?.into_iter().sum())
             }
-            Expression::Comparison(a, op, b) => {
-                Ok(comparison(a.distribution()?, *op, b.distribution()?))
-            }
+            Expression::Comparison(a, op, b) => Ok(comparison(
+                a.distribution_internal()?,
+                *op,
+                b.distribution_internal()?,
+            )),
         }
     }
 }
@@ -348,7 +386,10 @@ mod tests {
     use super::*;
 
     fn distribution_of(s: &str) -> Distribution {
-        s.parse::<Expression>().unwrap().distribution().unwrap()
+        s.parse::<Expression>()
+            .unwrap()
+            .distribution_internal()
+            .unwrap()
     }
 
     #[test]
@@ -408,7 +449,7 @@ mod tests {
     fn require_positive_roll_count() {
         for expr in ["(1d3-2)d4", "(-1)d10"] {
             let expr: Expression = expr.parse().unwrap();
-            let e = expr.distribution().unwrap_err();
+            let e = expr.distribution_internal().unwrap_err();
             assert!(matches!(e, Error::NegativeCount(_)));
         }
     }
@@ -417,7 +458,7 @@ mod tests {
     fn require_dice_to_keep() {
         for expr in ["2d4kh3", "(1d4)(4)kl2"] {
             let expr: Expression = expr.parse().unwrap();
-            let e = expr.distribution().unwrap_err();
+            let e = expr.distribution_internal().unwrap_err();
             assert!(matches!(e, Error::KeepTooFew(_)));
         }
     }

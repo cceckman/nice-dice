@@ -2,7 +2,7 @@
 
 use std::str::FromStr;
 
-use discrete::{Distributable, Distribution};
+use discrete::Distribution;
 use maud::PreEscaped;
 use peg::{error::ParseError, str::LineCol};
 use wasm_bindgen::prelude::*;
