@@ -6,6 +6,7 @@
     <script src="app.js" type="module"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="charts.css-1.1.0/dist/charts.min.css">
+        <style>table.examples { border: 1px solid black; }</style>
 </head>
 
 <body>
@@ -15,6 +16,73 @@
 
             <div id="parsed"></div>
         </form>
+
+        <table class="examples">
+            <caption>Expressions, in precedence order</caption>
+            <tr>
+                <td>Die</td>
+                <td class="example">d20</td>
+                <td>A 20-sided die.</td></tr>
+            <tr>
+                <td>Modifiers</td>
+                <td class="example">3</td>
+                <td>A constant value 2.</td></tr>
+            <tr>
+                <td rowspan="3">Repeats</td>
+                <td class="example">3d10</td><td>Roll a 10-sided die 3 times and sum the results.</td>
+            </tr>
+            <tr><td class="example">3(d8 + 1)</td><td>3 times, roll an 8-sided die and add 1, and sum the results</td></tr>
+            <tr><td class="example">(d4)(d8)</td><td>Roll a d4; then roll a d8 the number of times shown on the d4.</td></tr>
+
+            <tr>
+                <td rowspan="3">Repeats with selection</td>
+                <td class="example">2d20kh</td>
+                <td>Roll (2) 20-sided dice; keep the highest value. (Advantage!)</td>
+            </tr>
+            <tr>
+                <td class="example">2d20kl</td>
+                <td>Roll (2) 20-sided dice; keep the lowest value. (Disadvantage)</td>
+            </tr>
+            <tr>
+                <td class="example">4d6kh3</td>
+                <td>Roll (4) 6-sided dice. Keep the highest 3 values and sum them. (Stats roll)</td>
+            </tr>
+            <tr>
+                <td rowspan="3">Multiplication and division</td>
+                <td class="example">8d6 * 2 </td>
+                <td>Roll (8) 6-sided dice, sum the results, and multiply the result by 2.</td>
+            </tr>
+            <tr>
+                <td class="example">8d6 /_ 2</td>
+                <td>Roll (8) 6-sided dice, sum the results, and divide the result by 2, rounding down.</td>
+            </tr>
+            <tr>
+                <td class="example">8d6 * 2 /_ 2</td>
+                <td>Roll (8) 6-sided dice, sum the results, multiply the result by 2, then divide that result by 2, rounding down.</td>
+            </tr>
+            <tr>
+                <td rowspan="3">Addition and subtraction</td>
+                <td class="example">1d10 + 7</td>
+                <td>Roll a 10-sided die and add 7 to the result. (Damage roll)</td>
+            </tr>
+            <tr>
+                <td class="example">1d20 + 1d4 - 1d4 + -1</td>
+                <td>Roll a 20-sided die. Roll a 4-sided die and add it to the result. Roll a 4-sided die and subtract it from the result. Subtract 1 from the result. (Bless , bane, and a negative stats modifier)</td>
+            </tr>
+            <tr>
+                <td class="example">1d20 - (1d4 + -3)</td>
+                <td>Roll a 20-sided die. Then roll a 4-sided die, subtract 3 from the result; and subtract that result from the twenty-sided die roll.<td>
+            </tr>
+            <tr>
+                <td rowspan="2">Comparison</td>
+                <td class="example">1d20 &ge; 17</td>
+                <td>Roll a 20-sided die. If the result is greater than or equal to 17, use the value 1; otherwise, use the value 0.</td>
+            </tr>
+            <tr>
+                <td class="example">(1d20 &lt 16) * 1d8</td>
+                <td>Roll a 20-sided die. If the result is less than 16, roll a 1d8 and use its result; otherwise, use 0. (Spell save)</td>
+            </tr>
+        </table>
 </body>
 
 </html>

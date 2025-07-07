@@ -16,6 +16,18 @@ async function run() {
         let result = distribution_table(entries);
         parsed.innerHTML = result;
     })
+
+    for (const example of document.querySelectorAll(".example")) {
+        const text = example.innerText;
+        const link = document.createElement("button");
+        link.innerText = text;
+        link.addEventListener("click", (e) => {
+            e.preventDefault()
+            formula.value = text;
+            input.requestSubmit()
+        })
+        example.replaceChildren(link)
+    }
 }
 
 run();
