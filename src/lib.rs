@@ -130,6 +130,7 @@ enum ComparisonOp {
     Eq,
     Le,
     Lt,
+    True,
 }
 
 impl std::fmt::Display for ComparisonOp {
@@ -140,8 +141,37 @@ impl std::fmt::Display for ComparisonOp {
             ComparisonOp::Eq => '=',
             ComparisonOp::Le => '≤',
             ComparisonOp::Lt => '<',
+            ComparisonOp::True => ' ',
         };
         write!(f, "{c}")
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Branch {
+    op: ComparisonOp,
+    threshold: Expression,
+    value: Expression,
+}
+
+impl Branch {
+    /// Make an "else" (always-true) branch.
+    fn make_else(value: Expression) -> Branch {
+        Branch {
+            op: ComparisonOp::True,
+            threshold: Expression::Modifier(usize::MAX),
+            value,
+        }
+    }
+}
+
+impl std::fmt::Display for Branch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let ComparisonOp::True = self.op {
+            write!(f, "{{ {} }}", self.value)
+        } else {
+            write!(f, "{{ {} {} : {} }}", self.op, self.threshold, self.value)
+        }
     }
 }
 
@@ -159,7 +189,10 @@ enum Expression {
     Sum(Vec<Expression>),
     Floor(Box<Expression>, Box<Expression>),
     //Ceiling(Box<Expression>, Box<Expression>),
-    Comparison(Box<Expression>, ComparisonOp, Box<Expression>),
+    Case {
+        target: Box<Expression>,
+        branches: Vec<Branch>,
+    },
 }
 
 impl Expression {
@@ -219,9 +252,25 @@ impl Expression {
                     Expression::Sum(es)
                 }
             }
-            Expression::Comparison(a, op, b) => {
-                Expression::Comparison(Box::new(a.simplify()), op, Box::new(b.simplify()))
-            }
+            Expression::Case { target, branches } => Expression::Case {
+                target: Box::new(target.simplify()),
+                branches: branches
+                    .into_iter()
+                    .map(
+                        |Branch {
+                             op,
+                             threshold,
+                             value,
+                         }| {
+                            Branch {
+                                op,
+                                threshold: threshold.simplify(),
+                                value: value.simplify(),
+                            }
+                        },
+                    )
+                    .collect(),
+            },
         }
     }
 }
@@ -348,18 +397,11 @@ impl std::fmt::Display for Expression {
 
                 Ok(())
             }
-            Expression::Comparison(a, op, b) => {
-                if matches!(&**a, Expression::Comparison(_, _, _)) {
-                    a.with_paren(f)?
-                } else {
-                    a.fmt(f)?
-                };
-                write!(f, " {op} ")?;
-                if matches!(&**b, Expression::Comparison(_, _, _)) {
-                    b.with_paren(f)?
-                } else {
-                    b.fmt(f)?
-                };
+            Expression::Case { target, branches } => {
+                target.with_paren(f)?;
+                for branch in branches {
+                    write!(f, " {branch}")?;
+                }
                 Ok(())
             }
         }
@@ -379,8 +421,6 @@ peg::parser! {
 
         rule paren() -> Expression
             = "(" space() e:expression() space() ")" { e }
-            // / "[" e:expression() "]" { e }
-            // / "{" e:expression() "}" { e }
 
         rule repeatable() -> Expression
             = paren() / die()
@@ -425,17 +465,28 @@ peg::parser! {
             / ("<=" / "≤") { ComparisonOp::Le }
             / "<" { ComparisonOp::Lt }
 
-        // TODO: There's a few mechanics that involve fancier conditionals:
-        // - save for half damage
-        // - critical hit, critical miss
-        // Consider... {expr} (cmp expr){value} (cmp expr){value}
-        // or some other special grammar for this.
-        rule comparison() -> Expression
-            = a:sum() space() op:compare_op() space() b:sum() { Expression::Comparison(Box::new(a), op, Box::new(b)) }
-            / sum()
+        rule branch() -> Branch
+            = space() "{" space()
+                op:compare_op() space() threshold:expression() space()
+                ":" space() value:expression() space()
+            "}" { Branch{op, threshold, value} }
+
+        rule else_branch() -> Branch
+            = space() "{" space() value:expression() space() "}" {
+                Branch::make_else(value)
+            }
+
+        rule case() -> Expression
+            = target:paren() branches:branch()+ el:else_branch()? {
+                let mut branches = branches;
+                if let Some(el) = el {
+                    branches.push(el);
+                }
+                Expression::Case{ target: Box::new(target), branches }
+        }
 
         pub(crate) rule expression() -> Expression
-            = comparison()
+            = case() / sum()
     }
 }
 
@@ -531,12 +582,15 @@ mod tests {
 
     #[test]
     fn compare() {
-        let got: Expression = "d4 < d6".parse().unwrap();
-        let want = Expression::Comparison(
-            Box::new(Expression::Die(4)),
-            ComparisonOp::Lt,
-            Box::new(Expression::Die(6)),
-        );
+        let got: Expression = "(d4){ <= 3: 1}".parse().unwrap();
+        let want = Expression::Case {
+            target: Box::new(Expression::Die(4)),
+            branches: vec![Branch {
+                op: ComparisonOp::Le,
+                threshold: Expression::Modifier(3),
+                value: Expression::Modifier(1),
+            }],
+        };
         assert_eq!(got, want);
     }
 
@@ -544,19 +598,44 @@ mod tests {
     fn spell_damage() {
         for expr in [
             // fireball, 5th level
-            "(1d20+3 >= 17) * 2d20",
+            "(1d20+3){>=17:2d10}",
             // eldritch blast, 5th level
-            "2 ( (1d20+3 >= 17) * 2d20)",
+            "2 ((1d20+3) { >= 17: 1d10 } )",
             // sacred flame; save
-            "(1d20+2 <= 15) * 2d8",
-            // fireball, 3rd level... and an incorrect way of saving for half damage,
-            // this only results in even damage values.
-            "((1d20+2 <= 15) + 1) * (8d6) /_ 2",
+            "(1d20+2){ <= 15: 2d8}",
         ] {
             let _: Expression = expr
                 .parse()
-                .unwrap_or_else(|_| panic!("failure to parse: {expr}"));
+                .unwrap_or_else(|err| panic!("failure to parse {expr}: {err}"));
         }
+    }
+
+    #[test]
+    fn save_for_half() {
+        let _: Expression = "(1d20+2){ >= 17: 8d6 /_ 2} { 8d6 }".parse().unwrap();
+    }
+
+    fn nontrivial_comparison() -> impl Strategy<Value = ComparisonOp> {
+        prop_oneof![
+            Just(ComparisonOp::Lt),
+            Just(ComparisonOp::Le),
+            Just(ComparisonOp::Eq),
+            Just(ComparisonOp::Ge),
+            Just(ComparisonOp::Gt),
+        ]
+    }
+
+    // Generate a nontrivial (i.e. "else") branch
+    fn branch(expr: impl Clone + Strategy<Value = Expression>) -> impl Strategy<Value = Branch> {
+        (nontrivial_comparison(), expr.clone(), expr).prop_map(|(op, threshold, value)| Branch {
+            op,
+            threshold,
+            value,
+        })
+    }
+
+    fn else_branch(expr: impl Strategy<Value = Expression>) -> impl Strategy<Value = Branch> {
+        expr.prop_map(Branch::make_else)
     }
 
     /// Generate a possibly-recursive Expression.
@@ -578,8 +657,21 @@ mod tests {
                     Expression::Product(Box::new(count), Box::new(value))
                 }),
                 prop::collection::vec(strat.clone(), 2..5).prop_map(Expression::Sum),
-                (strat.clone(), strat.clone(), any::<ComparisonOp>())
-                    .prop_map(|(a, b, op)| Expression::Comparison(Box::new(a), op, Box::new(b))),
+                (
+                    strat.clone(),
+                    prop::collection::vec(branch(strat.clone()), 1..3),
+                    prop::option::of(strat.clone()),
+                )
+                    .prop_map(|(target, branches, use_else)| {
+                        let mut branches = branches;
+                        if let Some(v) = use_else {
+                            branches.push(Branch::make_else(v))
+                        };
+                        Expression::Case {
+                            target: Box::new(target),
+                            branches,
+                        }
+                    })
             ]
         })
     }

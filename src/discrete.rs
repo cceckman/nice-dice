@@ -5,7 +5,7 @@ use std::ops::Neg;
 use itertools::Itertools;
 use num::{ToPrimitive, rational::Ratio};
 
-use crate::{ComparisonOp, Error, Expression, Ranker};
+use crate::{Branch, ComparisonOp, Error, Expression, Ranker};
 
 /// A computed distribution for a bounded dice expression.
 /// ("bounded": does not support exploding dice.)
@@ -310,27 +310,55 @@ fn floor(e: &Expression, a: Distribution, b: Distribution) -> Result<Distributio
     Ok(d)
 }
 
-fn comparison(a: Distribution, op: ComparisonOp, b: Distribution) -> Distribution {
-    let mut d = Distribution::empty();
+fn case(target: Distribution, branches: &[Branch]) -> Result<Distribution, Error> {
+    let branch_distributions: Result<Vec<_>, Error> = branches
+        .iter()
+        .map(
+            |Branch {
+                 op,
+                 threshold,
+                 value,
+             }|
+             -> Result<_, Error> {
+                let threshold = threshold.distribution()?;
+                let value = value.distribution()?;
+                Ok((*op, threshold, value))
+            },
+        )
+        .collect();
+    let branch_distributions = branch_distributions?;
 
-    for ((a, f1), (b, f2)) in a.occurrences().cartesian_product(b.occurrences()) {
-        let value = match op {
-            ComparisonOp::Gt => a > b,
-            ComparisonOp::Ge => a >= b,
-            ComparisonOp::Eq => a == b,
-            ComparisonOp::Le => a <= b,
-            ComparisonOp::Lt => a < b,
-        };
-        d.add_occurrences(if value { 1 } else { 0 }, f1 * f2);
+    let mut result = Distribution::empty();
+    for (value, occ) in target.occurrences() {
+        let mut residual = occ;
+        for (op, threshold_distr, value_distr) in &branch_distributions {}
     }
 
-    // Shorten our expression chain if we have a true or false condition:
-    if d.probability(0) == Ratio::ONE {
-        Distribution::modifier(0)
-    } else if d.probability(1) == Ratio::ONE {
-        Distribution::modifier(1)
-    } else {
-        d
+    todo!()
+}
+
+impl ComparisonOp {
+    /// Perform a comparison against the target distribution.
+    /// Returns the number of occurrences in "other" in which the comparison passes.
+    fn compare(&self, value: isize, other: &Distribution) -> usize {
+        let gt: usize = other
+            .occurrences()
+            .take_while(|(v2, _)| value > *v2)
+            .map(|(_, f2)| f2)
+            .sum();
+        let ratio = other.probability(value);
+        let eq = *ratio.numer();
+        let total = *ratio.denom();
+        let lt = total - (gt + eq);
+
+        match self {
+            ComparisonOp::Gt => gt,
+            ComparisonOp::Ge => gt + eq,
+            ComparisonOp::Eq => eq,
+            ComparisonOp::Le => lt + eq,
+            ComparisonOp::Lt => lt,
+            ComparisonOp::True => total,
+        }
     }
 }
 
@@ -372,11 +400,7 @@ impl Expression {
                     .collect();
                 Ok(terms?.into_iter().sum())
             }
-            Expression::Comparison(a, op, b) => Ok(comparison(
-                a.distribution_internal()?,
-                *op,
-                b.distribution_internal()?,
-            )),
+            Expression::Case { target, branches } => case(target.distribution()?, branches),
         }
     }
 }
@@ -487,24 +511,13 @@ mod tests {
     }
 
     #[test]
-    fn comparison() {
-        let d = distribution_of("1d4 > 3");
-        let ps: Vec<_> = d.occurrences().collect();
-        assert_eq!(&ps, &vec![(0, 3), (1, 1)])
-    }
+    fn compare_constant() {
+        let d = distribution_of("1d20");
 
-    #[test]
-    fn simplify_false() {
-        let d = distribution_of("1d4 < 0");
-        let ps: Vec<_> = d.occurrences().collect();
-        assert_eq!(&ps, &vec![(0, 1)])
-    }
-
-    #[test]
-    fn simplify_true() {
-        let d = distribution_of("1d4 <= 4");
-        let ps: Vec<_> = d.occurrences().collect();
-        assert_eq!(&ps, &vec![(1, 1)])
+        {
+            let d = ComparisonOp::Gt.compare(10, &d);
+            assert_eq!(d, 9);
+        }
     }
 
     #[test]
@@ -512,13 +525,5 @@ mod tests {
         let d = distribution_of("1d4 /_ 2");
         let ps: Vec<_> = d.occurrences().collect();
         assert_eq!(&ps, &vec![(0, 1), (1, 2), (2, 1)])
-    }
-
-    #[test]
-    fn complex_expressions() {
-        let fireball = distribution_of("(1d20+3 >= 17) * 2d10");
-        let eldritch_blast = distribution_of("2((1d20+3 >= 17) * 1d10)");
-
-        assert_eq!(fireball.mean(), eldritch_blast.mean());
     }
 }
