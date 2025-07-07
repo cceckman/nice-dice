@@ -4,8 +4,6 @@ use std::{collections::BTreeMap, ops::Neg};
 
 use num::rational::Ratio;
 
-use crate::Dice;
-
 /// A computed distribution for a bounded dice expression.
 /// ("bounded": does not support exploding dice.)
 ///
@@ -184,17 +182,6 @@ impl std::iter::Sum for Distribution {
 /// A type for which a Distribution can be computed.
 pub trait Distributable {
     fn distribution(&self) -> Distribution;
-}
-
-impl Distributable for Dice {
-    fn distribution(&self) -> Distribution {
-        let mut sum = Distribution::modifier(0);
-        let d = Distribution::die(self.m);
-        for _ in 0..self.n {
-            sum = &sum + &d;
-        }
-        sum
-    }
 }
 
 #[cfg(test)]

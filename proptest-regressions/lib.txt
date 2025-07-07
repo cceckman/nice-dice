@@ -8,3 +8,7 @@ cc 00d5f32bf0534f68ef612497f2a661b5d12d6247fa1fa35305bba6e52f0ec0a0 # shrinks to
 cc 1b4db316878dc8d838b2f13640da47102e56b66d138d0607a2bd9825286cfa53 # shrinks to exp = Sum([Negation(Roll(Dice { n: 930, m: 17227962988692948969 }))])
 cc e3c9ed1928404fb8172361f60f42cf9190b5c355968eed5d188403e52f10ee07 # shrinks to exp = Negation(Negation(Roll(Dice { n: 0, m: 0 })))
 cc 8f991ca29db47a4b388390f4f26c71111bd068da1236328948c34481395d5f5b # shrinks to exp = Negation(Negation(Roll(Dice { n: 0, m: 0 })))
+cc e062f498e1967889bcb5bf7482c5e0218c8b59730028f2e0f6d40a3e6ba9602a # shrinks to exp = Sum([])
+cc d2f0f03913793eb31a01d0804ed71e01f57434fbd43967052aa3aa061c0f2cf0 # shrinks to exp = Product(Sum([]), Die(0))
+cc 4a2f7a46a0d1be77c4dfc7ed14cf3b2df122a34dca068efb9c899e50e66700f3 # shrinks to exp = Sum([Sum([Die(0), Die(0)]), Die(0)])
+cc c65bcdfcc15811c248102bd3f1273f202404378aeba8bd6de4ff38902135fc16 # shrinks to exp = Sum([Sum([Die(0), Die(0)]), Die(0)])
