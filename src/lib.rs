@@ -549,7 +549,8 @@ mod tests {
             "2 ( (1d20+3 >= 17) * 2d20)",
             // sacred flame; save
             "(1d20+2 <= 15) * 2d8",
-            // fireball, 3rd level, save for half damage
+            // fireball, 3rd level... and an incorrect way of saving for half damage,
+            // this only results in even damage values.
             "((1d20+2 <= 15) + 1) * (8d6) /_ 2",
         ] {
             let _: Expression = expr
