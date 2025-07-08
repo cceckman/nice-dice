@@ -486,7 +486,8 @@ peg::parser! {
         }
 
         pub(crate) rule expression() -> Expression
-            = case() / sum()
+            = space() e:case() space() { e }
+            / space() e:sum() space() { e }
     }
 }
 
@@ -632,10 +633,6 @@ mod tests {
             threshold,
             value,
         })
-    }
-
-    fn else_branch(expr: impl Strategy<Value = Expression>) -> impl Strategy<Value = Branch> {
-        expr.prop_map(Branch::make_else)
     }
 
     /// Generate a possibly-recursive Expression.

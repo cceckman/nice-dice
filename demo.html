@@ -74,13 +74,17 @@
                 <td>Roll a 20-sided die. Then roll a 4-sided die, subtract 3 from the result; and subtract that result from the twenty-sided die roll.<td>
             </tr>
             <tr>
-                <td rowspan="2">Comparison</td>
-                <td class="example">1d20 &ge; 17</td>
-                <td>Roll a 20-sided die. If the result is greater than or equal to 17, use the value 1; otherwise, use the value 0.</td>
+                <td rowspan="3">Comparison</td>
+                <td class="example">(1d20) { &ge; 17: 1d4 }</td>
+                <td>Roll a 20-sided die. If the result is greater than or equal to 17, roll 1d4 and use its value; otherwise, use the value 0.</td>
             </tr>
             <tr>
-                <td class="example">(1d20 &lt 16) * 1d8</td>
-                <td>Roll a 20-sided die. If the result is less than 16, roll a 1d8 and use its result; otherwise, use 0. (Spell save)</td>
+                <td class="example">(1d20) { &ge; 17: 8d6 /_ 2 } { 8d6 }</td>
+                <td>Roll a 20-sided die. If the result is greater than or equal to 17, roll (8) 6-sided dice, sum them, and divide the result by two (rounding down); otherwise, roll (8) 6-sided dice and sum them. (Fireball, save for half damage.)</td>
+            </tr>
+            <tr>
+                <td class="example">(1d20) { = 20: 2d10 +4} { = 1: 0 } { 1d10 +4}</td>
+                <td>Roll a 20-sided die. If the result is less than 20, roll a (2) 10-sided dice and sum them along with 4; if the result is 1, use the value 0; otherwise, roll a 10-sided die and add 4 to the result. (Crit, but no modifiers)</td>
             </tr>
         </table>
 </body>

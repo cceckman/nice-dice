@@ -60,7 +60,9 @@ impl Distribution {
     /// Report the total number of occurrences in this expression, i.e. the number of possible
     /// rolls (rather than the number of distinct values).
     pub fn total(&self) -> usize {
-        self.occurrence_by_value.iter().sum()
+        let v = self.occurrence_by_value.iter().sum();
+        debug_assert_ne!(v, 0);
+        v
     }
 
     /// Iterator over (value, occurrences) tuples in this distribution.
@@ -328,13 +330,41 @@ fn case(target: Distribution, branches: &[Branch]) -> Result<Distribution, Error
         .collect();
     let branch_distributions = branch_distributions?;
 
-    let mut result = Distribution::empty();
-    for (value, occ) in target.occurrences() {
-        let mut residual = occ;
-        for (op, threshold_distr, value_distr) in &branch_distributions {}
-    }
+    // What possibilities are there within the branches?
+    // We can account for the total number without weighting them yet.
+    let branches_total: usize = branch_distributions
+        .iter()
+        .map(|(_, t, v)| t.total() * v.total())
+        .product::<usize>();
 
-    todo!()
+    let mut result = Distribution::empty();
+    for (target, target_occ) in target.occurrences() {
+        // Weight the branch possibilities by how often we wind up with the value we're currently considering.
+        let mut branches_total: usize = branches_total * target_occ;
+
+        for (op, threshold_distr, value_distr) in &branch_distributions {
+            // How many times will we take _this_ branch?
+            let occurrences = op.compare(target, threshold_distr);
+            let branch_total = threshold_distr.total() * value_distr.total();
+            // We can count towards "this branch" all the possibilities in later branches,
+            // and the weights that got us _to_ this branch.
+            // But we need to weight only the times that we are _on_ this branch, like so:
+            branches_total /= branch_total;
+            for (v, vf) in value_distr.occurrences() {
+                result.add_occurrences(v, vf * occurrences * branches_total);
+            }
+
+            // Update the results for the next branch with how often we fall through:
+            let residual = (threshold_distr.total() - occurrences) * value_distr.total();
+            branches_total *= residual;
+        }
+
+        // If we have any probability of "falling off the end",
+        // contribute it towards a zero value.
+        // No conditional here; if branches_total is 0, then we add nothing to the distribution.
+        result.add_occurrences(0, branches_total);
+    }
+    Ok(result)
 }
 
 impl ComparisonOp {
@@ -348,7 +378,7 @@ impl ComparisonOp {
             .sum();
         let ratio = other.probability(value);
         let eq = *ratio.numer();
-        let total = *ratio.denom();
+        let total = other.total();
         let lt = total - (gt + eq);
 
         match self {
@@ -511,13 +541,102 @@ mod tests {
     }
 
     #[test]
+    fn never() {
+        let d = distribution_of("0d3");
+        let ps: Vec<_> = d.occurrences().collect();
+        assert_eq!(&ps, &vec![(0, 1)]);
+    }
+
+    #[test]
     fn compare_constant() {
         let d = distribution_of("1d20");
 
         {
+            // 10 > 1d20 : 9 times
             let d = ComparisonOp::Gt.compare(10, &d);
             assert_eq!(d, 9);
         }
+        {
+            let d = ComparisonOp::Ge.compare(10, &d);
+            assert_eq!(d, 10);
+        }
+        {
+            let d = ComparisonOp::Eq.compare(20, &d);
+            assert_eq!(d, 1);
+        }
+        {
+            let d = ComparisonOp::Eq.compare(21, &d);
+            assert_eq!(d, 0);
+        }
+        {
+            // 0 <= 1d20 always
+            let d = ComparisonOp::Le.compare(00, &d);
+            assert_eq!(d, 20);
+        }
+        {
+            let d = ComparisonOp::Le.compare(18, &d);
+            assert_eq!(d, 3);
+        }
+        {
+            let d = ComparisonOp::Lt.compare(3, &d);
+            assert_eq!(d, 17);
+        }
+    }
+
+    #[test]
+    fn critical_slap() {
+        let d = distribution_of(
+            r#"
+        (1d20) { = 20: 2 } { >= 12: 1 }
+    "#,
+        );
+        let ps: Vec<_> = d.occurrences().collect();
+        assert_eq!(&ps, &vec![(0, 11), (1, 8), (2, 1)])
+    }
+
+    #[test]
+    fn critical_fail() {
+        let d = distribution_of(
+            r#"
+                (1d20) { = 20: 2 } { = 1: 0 } { 1 }
+        "#,
+        );
+        let ps: Vec<_> = d.occurrences().collect();
+        assert_eq!(&ps, &vec![(0, 1), (1, 18), (2, 1)])
+    }
+
+    #[test]
+    fn even_contest() {
+        let d = distribution_of(
+            r#"
+                (1d20) { = 1d20: 2 }
+        "#,
+        );
+        let ps: Vec<_> = d.occurrences().collect();
+        assert_eq!(&ps, &vec![(0, 380), (2, 20)])
+    }
+
+    #[test]
+    fn break_even_contest() {
+        let d = distribution_of(
+            r#"
+                (1d20) { >= 1d20: 2 }
+        "#,
+        );
+        let ps: Vec<_> = d.occurrences().collect();
+        // >= is slightly biased towards the aggressor, "meets or exceeds"
+        assert_eq!(&ps, &vec![(0, 190), (2, 210)])
+    }
+
+    #[test]
+    fn dagger() {
+        let d = distribution_of("(1d20) { > 10: 1d4 }");
+        let ps: Vec<_> = d.occurrences().collect();
+        // In 10/20 cases, we pick the first branch.
+        // In 10/20 cases, we pick the second branch.
+        // In the second branch, we get each value 1/4 of the time.
+
+        assert_eq!(&ps, &vec![(0, 40), (1, 10), (2, 10), (3, 10), (4, 10)])
     }
 
     #[test]
