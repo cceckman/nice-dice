@@ -23,6 +23,11 @@ peg::parser! {
         rule symbol_expr() -> Expression
             = s:symbol_token() { Expression::Symbol(s) }
 
+        rule binding() -> Expression
+            = "[" space() symbol:symbol_token() space() ":" space() e:expression() space() "]" {
+                Expression::Binding { symbol, expression: Box::new(e) }
+            }
+
         rule paren() -> Expression
             = "(" space() e:expression() space() ")" { e }
 
@@ -44,7 +49,7 @@ peg::parser! {
         rule space() = quiet!{[' ' | '\n' | '\r' | '\t']*}
 
         rule pos_subterm() -> Expression
-            = repeat() / die() / modifier() / symbol_expr() / paren()
+            = binding() / repeat() / die() / modifier() / symbol_expr() / paren()
 
         rule subterm() -> Expression
             = pos_subterm()
@@ -110,6 +115,10 @@ pub enum Expression {
         value: Box<Expression>,
         ranker: Ranker,
     },
+    Binding {
+        symbol: Symbol,
+        expression: Box<Expression>,
+    },
     Product(Box<Expression>, Box<Expression>),
     Sum(Vec<Expression>),
     Floor(Box<Expression>, Box<Expression>),
@@ -148,6 +157,10 @@ impl Expression {
                     _ => Expression::Negated(Box::new(simpl)),
                 }
             }
+            Expression::Binding { symbol, expression } => Expression::Binding {
+                symbol,
+                expression: Box::new(expression.simplify()),
+            },
             Expression::Repeated {
                 count,
                 value,
@@ -227,6 +240,9 @@ impl std::fmt::Display for Expression {
                     value.with_paren(f)?
                 };
                 write!(f, "{ranker}")
+            }
+            Expression::Binding { symbol, expression } => {
+                write!(f, "[{symbol}: {expression}]")
             }
             Expression::Negated(expression) => {
                 if matches!(
