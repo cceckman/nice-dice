@@ -19,6 +19,8 @@ pub enum Error {
     KeepTooFew(String),
     #[error("denominator contains 0; in expression {0}")]
     DivideByZero(String),
+    #[error("invalid character {0} in symbol; symbols may only contain A-Z")]
+    InvalidSymbolCharacter(char),
 }
 
 /// Get the distribution of the expression as an HTML table.
@@ -175,8 +177,32 @@ impl std::fmt::Display for Branch {
     }
 }
 
+/// Representing some portion of the expression.
+/// Restricted to capital letters, A-Z.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct Symbol(String);
+
+impl std::fmt::Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for Symbol {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(c) = s.chars().find(|c| !c.is_ascii_uppercase()) {
+            Err(Error::InvalidSymbolCharacter(c))
+        } else {
+            Ok(Symbol(s.to_owned()))
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Clone)]
 enum Expression {
+    Symbol(Symbol),
     Modifier(usize),
     Die(usize),
     Negated(Box<Expression>),
@@ -214,6 +240,7 @@ impl Expression {
         match self {
             Expression::Modifier(_) => self,
             Expression::Die(_) => self,
+            Expression::Symbol(_) => self,
             Expression::Negated(inner) => {
                 let simpl = inner.simplify();
                 match simpl {
@@ -280,6 +307,7 @@ impl std::fmt::Display for Expression {
         match self {
             Expression::Die(n) => write!(f, "d{n}"),
             Expression::Modifier(n) => n.fmt(f),
+            Expression::Symbol(s) => s.fmt(f),
             Expression::Repeated {
                 count,
                 value,
@@ -419,6 +447,12 @@ peg::parser! {
         rule modifier() -> Expression
             = n:number() { Expression::Modifier(n) }
 
+        rule symbol_token() -> Symbol
+            = s:$(['a'..='z'|'A'..='Z']+) {? s.parse().or(Err("symbol")) }
+
+        rule symbol_expr() -> Expression
+            = s:symbol_token() { Expression::Symbol(s) }
+
         rule paren() -> Expression
             = "(" space() e:expression() space() ")" { e }
 
@@ -439,9 +473,12 @@ peg::parser! {
 
         rule space() = quiet!{[' ' | '\n' | '\r' | '\t']*}
 
+        rule pos_subterm() -> Expression
+            = repeat() / die() / modifier() / symbol_expr() / paren()
+
         rule subterm() -> Expression
-            =   repeat() / die() / modifier() / paren()
-            /   "-" e:(repeat() / die() / modifier() / paren()) { Expression::Negated(Box::new(e)) }
+            = pos_subterm()
+            /   "-" e:(pos_subterm()) { Expression::Negated(Box::new(e)) }
 
         rule term() -> Expression
             = e1:subterm() space() "*" space() e2:term() { Expression::Product(Box::new(e1), Box::new(e2)) }
@@ -626,6 +663,12 @@ mod tests {
         ]
     }
 
+    fn symbol() -> impl Strategy<Value = Symbol> {
+        proptest::string::string_regex("[A-Z]+")
+            .expect("valid regex")
+            .prop_map(|s| s.parse().unwrap())
+    }
+
     // Generate a nontrivial (i.e. "else") branch
     fn branch(expr: impl Clone + Strategy<Value = Expression>) -> impl Strategy<Value = Branch> {
         (nontrivial_comparison(), expr.clone(), expr).prop_map(|(op, threshold, value)| Branch {
@@ -640,6 +683,7 @@ mod tests {
         let leaf = proptest::prop_oneof![
             any::<usize>().prop_map(Expression::Die),
             any::<usize>().prop_map(Expression::Modifier),
+            symbol().prop_map(Expression::Symbol),
         ];
         leaf.prop_recursive(3, 2, 3, |strat| {
             prop_oneof![

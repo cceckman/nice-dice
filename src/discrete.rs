@@ -406,6 +406,7 @@ impl Expression {
             Expression::Modifier(m) => Ok(Distribution::modifier(*m as isize)),
             Expression::Die(d) => Ok(Distribution::die(*d)),
             Expression::Negated(expression) => Ok(-(expression.distribution_internal()?)),
+            Expression::Symbol(_) => todo!("symbol not implemented"),
             Expression::Repeated {
                 count,
                 value,
