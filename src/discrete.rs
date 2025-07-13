@@ -5,7 +5,7 @@ use std::ops::Neg;
 use itertools::Itertools;
 use num::{ToPrimitive, rational::Ratio};
 
-use crate::{Branch, ComparisonOp, Error, Expression, Ranker};
+use crate::{Branch, ComparisonOp, Error, Ranker, parse::Expression};
 
 /// A computed distribution for a bounded dice expression.
 /// ("bounded": does not support exploding dice.)

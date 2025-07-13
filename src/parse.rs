@@ -4,7 +4,9 @@ use std::str::FromStr;
 
 use peg::{error::ParseError, str::LineCol};
 
-use crate::Error;
+use crate::{Error, symbolic::BindingAtom};
+
+type Expression = crate::symbolic::Expression<BindingAtom>;
 
 peg::parser! {
     grammar dice_notation() for str {
@@ -12,10 +14,10 @@ peg::parser! {
           = n:$(['0'..='9']+) {? n.parse().or(Err("usize")) }
 
         rule die() -> Expression
-            = "d" n:number() { Expression::Die(n) }
+            = "d" n:number() { BindingAtom::Die(n).into() }
 
         rule modifier() -> Expression
-            = n:number() { Expression::Modifier(n) }
+            = n:number() { BindingAtom::Constant(n).into() }
 
         rule symbol_token() -> Symbol
             = s:$(['a'..='z'|'A'..='Z']+) {? s.parse().or(Err("symbol")) }
@@ -100,38 +102,6 @@ peg::parser! {
         pub(crate) rule expression() -> Expression
             = space() e:case() space() { e }
             / space() e:sum() space() { e }
-    }
-}
-
-/// A parsed, but not analyzed, dice expression.
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub enum Expression {
-    Symbol(Symbol),
-    Modifier(usize),
-    Die(usize),
-    Negated(Box<Expression>),
-    Repeated {
-        count: Box<Expression>,
-        value: Box<Expression>,
-        ranker: Ranker,
-    },
-    Binding {
-        symbol: Symbol,
-        expression: Box<Expression>,
-    },
-    Product(Box<Expression>, Box<Expression>),
-    Sum(Vec<Expression>),
-    Floor(Box<Expression>, Box<Expression>),
-    //Ceiling(Box<Expression>, Box<Expression>),
-    Case {
-        target: Box<Expression>,
-        branches: Vec<Branch>,
-    },
-}
-
-impl Expression {
-    fn with_paren(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({self})")
     }
 }
 
@@ -357,7 +327,7 @@ impl std::fmt::Display for Expression {
 
 /// Representing some portion of the expression.
 /// Restricted to capital letters, A-Z.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Symbol(String);
 
 impl std::fmt::Display for Symbol {

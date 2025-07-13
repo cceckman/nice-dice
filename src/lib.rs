@@ -2,12 +2,14 @@
 
 use discrete::Distribution;
 use maud::PreEscaped;
+use parse::Symbol;
 use peg::{error::ParseError, str::LineCol};
 use wasm_bindgen::prelude::*;
 
 pub mod discrete;
 mod parse;
-use parse::{Branch, ComparisonOp, Expression, Ranker};
+pub use parse::{Branch, ComparisonOp, Ranker};
+mod symbolic;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -21,6 +23,8 @@ pub enum Error {
     DivideByZero(String),
     #[error("invalid character {0} in symbol; symbols may only contain A-Z")]
     InvalidSymbolCharacter(char),
+    #[error("symbol {0} is defined more than once")]
+    SymbolRedefined(Symbol),
 }
 
 /// Get the distribution of the expression as an HTML table.
@@ -37,7 +41,7 @@ pub fn distribution_table(inputs: Vec<String>) -> String {
 
 fn distribution_table_inner(inputs: Vec<String>) -> Result<PreEscaped<String>, Error> {
     fn get_distr(s: &String) -> Result<Distribution, Error> {
-        let e: Expression = s.parse().map_err(|e| Error::ParseError(s.to_owned(), e))?;
+        let e: parse::Expression = s.parse().map_err(|e| Error::ParseError(s.to_owned(), e))?;
         e.distribution()
     }
 
