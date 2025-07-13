@@ -16,14 +16,6 @@ struct Extracted {
     expression: Symbolic,
 }
 
-impl TryFrom<parse::Expression> for Extracted {
-    type Error = Error;
-
-    fn try_from(value: parse::Expression) -> Result<Self, Self::Error> {
-        todo!()
-    }
-}
-
 impl TryFrom<&Symbolic> for Unconditional {
     type Error = Vec<Symbol>;
 

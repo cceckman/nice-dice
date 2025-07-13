@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc cc29f7b95e223a8cf7ba4625ca69642df69411791719054803f21b12967c20b5 # shrinks to exp = Floor(Atom(Die(Die(0))), Atom(Die(Die(0))))
+cc 59f772c6d3baabf8cc5cb2ca1a7658a3071155481e0d9688c2bc9374083ccc70 # shrinks to exp = Floor(Atom(Die(Die(0))), Atom(Die(Die(0))))
+cc e2e713fc0e959c500afd43338c3a30ff8906c2b01204dbe8b63b338a9bd458ee # shrinks to exp = Repeated { count: Atom(Die(Die(0))), value: Atom(Die(Die(0))), ranker: All }
+cc 99f1af8a45b3705e339b29b7251f9c50064924d1a6609705040bc71c8f8221fe # shrinks to exp = Repeated { count: Atom(Die(Die(0))), value: Atom(Constant(Constant(0))), ranker: All }
+cc e50f8fc779f92697545b5b72d9260fe7cb7298ec628ab435914c421d23d0d739 # shrinks to exp = Comparison { a: Atom(Die(Die(0))), b: Sum([Atom(Die(Die(0))), Atom(Die(Die(0)))]), op: Gt }

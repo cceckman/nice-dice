@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use peg::{error::ParseError, str::LineCol};
 
-use crate::{Error, symbolic::BindingAtom};
+use crate::{Error, symbolic::BindingAtom, symbolic::Constant, symbolic::Die};
 
 type Expression = crate::symbolic::Expression<BindingAtom>;
 
@@ -14,20 +14,20 @@ peg::parser! {
           = n:$(['0'..='9']+) {? n.parse().or(Err("usize")) }
 
         rule die() -> Expression
-            = "d" n:number() { BindingAtom::Die(n).into() }
+            = "d" n:number() { Die(n).into() }
 
         rule modifier() -> Expression
-            = n:number() { BindingAtom::Constant(n).into() }
+            = n:number() { Constant(n).into() }
 
         rule symbol_token() -> Symbol
             = s:$(['a'..='z'|'A'..='Z']+) {? s.parse().or(Err("symbol")) }
 
         rule symbol_expr() -> Expression
-            = s:symbol_token() { Expression::Symbol(s) }
+            = s:symbol_token() { s.into() }
 
         rule binding() -> Expression
             = "[" space() symbol:symbol_token() space() ":" space() e:expression() space() "]" {
-                Expression::Binding { symbol, expression: Box::new(e) }
+                Expression::Atom(BindingAtom::Binding{ symbol, expression: Box::new(e) })
             }
 
         rule paren() -> Expression
@@ -37,7 +37,7 @@ peg::parser! {
             = paren() / die()
 
         rule repetitions() -> Expression
-            = n:number() { Expression::Modifier(n) }
+            = n:number() { Constant(n).into() }
             / paren()
 
         rule repeat() -> Expression
@@ -79,29 +79,12 @@ peg::parser! {
             / ("<=" / "≤") { ComparisonOp::Le }
             / "<" { ComparisonOp::Lt }
 
-        rule branch() -> Branch
-            = space() "{" space()
-                op:compare_op() space() threshold:expression() space()
-                ":" space() value:expression() space()
-            "}" { Branch{op, threshold, value} }
-
-        rule else_branch() -> Branch
-            = space() "{" space() value:expression() space() "}" {
-                Branch::make_else(value)
-            }
-
-        rule case() -> Expression
-            = target:paren() branches:branch()+ el:else_branch()? {
-                let mut branches = branches;
-                if let Some(el) = el {
-                    branches.push(el);
-                }
-                Expression::Case{ target: Box::new(target), branches }
-        }
+        rule comparison() -> Expression
+            = space() a:sum() space() op:compare_op() space() b:sum()
+        { Expression::Comparison{a:Box::new(a), b:Box::new(b),  op} }
 
         pub(crate) rule expression() -> Expression
-            = space() e:case() space() { e }
-            / space() e:sum() space() { e }
+            = comparison() / space() e:sum() space() { e }
     }
 }
 
@@ -117,9 +100,14 @@ impl Expression {
     /// Simplify the expression, where possible.
     pub fn simplify(self) -> Self {
         match self {
-            Expression::Modifier(_) => self,
-            Expression::Die(_) => self,
-            Expression::Symbol(_) => self,
+            Expression::Atom(a) => match a {
+                BindingAtom::Binding { symbol, expression } => BindingAtom::Binding {
+                    symbol,
+                    expression: Box::new(expression.simplify()),
+                }
+                .into(),
+                other => other.into(),
+            },
             Expression::Negated(inner) => {
                 let simpl = inner.simplify();
                 match simpl {
@@ -127,10 +115,6 @@ impl Expression {
                     _ => Expression::Negated(Box::new(simpl)),
                 }
             }
-            Expression::Binding { symbol, expression } => Expression::Binding {
-                symbol,
-                expression: Box::new(expression.simplify()),
-            },
             Expression::Repeated {
                 count,
                 value,
@@ -162,164 +146,10 @@ impl Expression {
                     Expression::Sum(es)
                 }
             }
-            Expression::Case { target, branches } => Expression::Case {
-                target: Box::new(target.simplify()),
-                branches: branches
-                    .into_iter()
-                    .map(
-                        |Branch {
-                             op,
-                             threshold,
-                             value,
-                         }| {
-                            Branch {
-                                op,
-                                threshold: threshold.simplify(),
-                                value: value.simplify(),
-                            }
-                        },
-                    )
-                    .collect(),
-            },
-        }
-    }
-}
-
-impl std::fmt::Display for Expression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO: Use alternate format specifier, e.g. '{:.}',
-        // to switch up spaces, multiplication signs, etc.
-
-        match self {
-            Expression::Die(n) => write!(f, "d{n}"),
-            Expression::Modifier(n) => n.fmt(f),
-            Expression::Symbol(s) => s.fmt(f),
-            Expression::Repeated {
-                count,
-                value,
-                ranker,
-            } => {
-                if matches!(&**count, Expression::Modifier(_)) {
-                    count.fmt(f)?
-                } else {
-                    count.with_paren(f)?
-                };
-                if matches!(&**value, Expression::Die(_)) {
-                    value.fmt(f)?
-                } else {
-                    value.with_paren(f)?
-                };
-                write!(f, "{ranker}")
-            }
-            Expression::Binding { symbol, expression } => {
-                write!(f, "[{symbol}: {expression}]")
-            }
-            Expression::Negated(expression) => {
-                if matches!(
-                    &**expression,
-                    Expression::Modifier(_) | Expression::Die(_) | Expression::Repeated { .. }
-                ) {
-                    expression.fmt(f)
-                } else {
-                    expression.with_paren(f)
-                }
-            }
-            Expression::Product(a, b) => {
-                if matches!(
-                    &**a,
-                    Expression::Modifier(_)
-                        | Expression::Die(_)
-                        | Expression::Repeated { .. }
-                        | Expression::Negated(_)
-                ) {
-                    a.fmt(f)?
-                } else {
-                    a.with_paren(f)?
-                };
-
-                write!(f, " * ")?;
-
-                if matches!(
-                    &**b,
-                    Expression::Modifier(_)
-                        | Expression::Die(_)
-                        | Expression::Repeated { .. }
-                        | Expression::Negated(_)
-                        | Expression::Product(_, _)
-                        | Expression::Floor(_, _)
-                ) {
-                    b.fmt(f)
-                } else {
-                    b.with_paren(f)
-                }
-            }
-            Expression::Floor(a, b) => {
-                if matches!(
-                    &**a,
-                    Expression::Modifier(_)
-                        | Expression::Die(_)
-                        | Expression::Repeated { .. }
-                        | Expression::Negated(_)
-                ) {
-                    a.fmt(f)?
-                } else {
-                    a.with_paren(f)?
-                };
-
-                write!(f, " /_ ")?;
-
-                if matches!(
-                    &**b,
-                    Expression::Modifier(_)
-                        | Expression::Die(_)
-                        | Expression::Repeated { .. }
-                        | Expression::Negated(_)
-                        | Expression::Product(_, _)
-                        | Expression::Floor(_, _)
-                ) {
-                    b.fmt(f)
-                } else {
-                    b.with_paren(f)
-                }
-            }
-            Expression::Sum(es) => {
-                fn write_element(
-                    e: &Expression,
-                    f: &mut std::fmt::Formatter<'_>,
-                ) -> Result<(), std::fmt::Error> {
-                    let e = match e {
-                        Expression::Negated(inner) => inner,
-                        _ => e,
-                    };
-                    match e {
-                        Expression::Modifier(_)
-                        | Expression::Die(_)
-                        | Expression::Repeated { .. }
-                        | Expression::Floor(_, _)
-                        | Expression::Product(_, _) => e.fmt(f),
-                        _ => e.with_paren(f),
-                    }
-                }
-                for (i, e) in es.iter().enumerate() {
-                    if i != 0 {
-                        let c = if let Expression::Negated(_) = e {
-                            '-'
-                        } else {
-                            '+'
-                        };
-                        write!(f, " {c} ")?;
-                    }
-                    write_element(e, f)?;
-                }
-
-                Ok(())
-            }
-            Expression::Case { target, branches } => {
-                target.with_paren(f)?;
-                for branch in branches {
-                    write!(f, " {branch}")?;
-                }
-                Ok(())
+            Expression::Comparison { a, b, op } => {
+                let a = Box::new(a.simplify());
+                let b = Box::new(b.simplify());
+                Expression::Comparison { a, b, op }
             }
         }
     }
@@ -392,7 +222,6 @@ pub enum ComparisonOp {
     Eq,
     Le,
     Lt,
-    True,
 }
 
 impl std::fmt::Display for ComparisonOp {
@@ -403,39 +232,8 @@ impl std::fmt::Display for ComparisonOp {
             ComparisonOp::Eq => '=',
             ComparisonOp::Le => '≤',
             ComparisonOp::Lt => '<',
-            ComparisonOp::True => ' ',
         };
         write!(f, "{c}")
-    }
-}
-
-/// A conditional branch. Depending on the value of its inner expression, relative to the overall
-/// value, contributes 0 or more.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Branch {
-    pub op: ComparisonOp,
-    pub threshold: Expression,
-    pub value: Expression,
-}
-
-impl Branch {
-    /// Make an "else" (always-true) branch.
-    pub fn make_else(value: Expression) -> Branch {
-        Branch {
-            op: ComparisonOp::True,
-            threshold: Expression::Modifier(usize::MAX),
-            value,
-        }
-    }
-}
-
-impl std::fmt::Display for Branch {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let ComparisonOp::True = self.op {
-            write!(f, "{{ {} }}", self.value)
-        } else {
-            write!(f, "{{ {} {} : {} }}", self.op, self.threshold, self.value)
-        }
     }
 }
 
@@ -447,7 +245,7 @@ mod tests {
     #[test]
     fn sole_die() {
         let got: Expression = "d6".parse().unwrap();
-        let want = Expression::Die(6);
+        let want = Die(6).into();
         assert_eq!(got, want);
     }
 
@@ -455,8 +253,8 @@ mod tests {
     fn several_dice() {
         let got: Expression = "1d20".parse().unwrap();
         let want = Expression::Repeated {
-            count: Box::new(Expression::Modifier(1)),
-            value: Box::new(Expression::Die(20)),
+            count: Box::new(Constant(1).into()),
+            value: Box::new(Die(20).into()),
             ranker: Ranker::All,
         };
         assert_eq!(got, want);
@@ -465,7 +263,7 @@ mod tests {
     #[test]
     fn modifier() {
         let got: Expression = "3".parse().unwrap();
-        let want = Expression::Modifier(3);
+        let want = Constant(3).into();
         assert_eq!(got, want);
     }
 
@@ -473,10 +271,10 @@ mod tests {
     fn multiply_chain() {
         let got: Expression = "3 * 4 * 5".parse().unwrap();
         let want = Expression::Product(
-            Box::new(Expression::Modifier(3)),
+            Box::new(Constant(3).into()),
             Box::new(Expression::Product(
-                Box::new(Expression::Modifier(4)),
-                Box::new(Expression::Modifier(5)),
+                Box::new(Constant(4).into()),
+                Box::new(Constant(5).into()),
             )),
         );
 
@@ -487,8 +285,8 @@ mod tests {
     fn disadvantage() {
         let got: Expression = "2d20kl".parse().unwrap();
         let want = Expression::Repeated {
-            count: Box::new(Expression::Modifier(2)),
-            value: Box::new(Expression::Die(20)),
+            count: Box::new(Constant(2).into()),
+            value: Box::new(Die(20).into()),
             ranker: Ranker::Lowest(1),
         };
         assert_eq!(got, want);
@@ -498,8 +296,8 @@ mod tests {
     fn stats_roll() {
         let got: Expression = "4d6kh3".parse().unwrap();
         let want = Expression::Repeated {
-            count: Box::new(Expression::Modifier(4)),
-            value: Box::new(Expression::Die(6)),
+            count: Box::new(Constant(4).into()),
+            value: Box::new(Die(6).into()),
             ranker: Ranker::Highest(3),
         };
         assert_eq!(got, want);
@@ -508,70 +306,33 @@ mod tests {
     #[test]
     fn negative() {
         let got: Expression = "-4".parse().unwrap();
-        let want = Expression::Negated(Box::new(Expression::Modifier(4)));
+        let want = Expression::Negated(Box::new(Constant(4).into()));
         assert_eq!(got, want);
     }
 
     #[test]
     fn multiply() {
         let got: Expression = "4 * d6".parse().unwrap();
-        let want = Expression::Product(
-            Box::new(Expression::Modifier(4)),
-            Box::new(Expression::Die(6)),
-        );
+        let want = Expression::Product(Box::new(Constant(4).into()), Box::new(Die(6).into()));
         assert_eq!(got, want);
     }
 
     #[test]
     fn sum() {
         let got: Expression = "d4 + d6".parse().unwrap();
-        let want = Expression::Sum(vec![Expression::Die(4), Expression::Die(6)]);
+        let want = Expression::Sum(vec![Die(4).into(), Die(6).into()]);
         assert_eq!(got, want);
     }
 
     #[test]
     fn compare() {
-        let got: Expression = "(d4){ <= 3: 1}".parse().unwrap();
-        let want = Expression::Case {
-            target: Box::new(Expression::Die(4)),
-            branches: vec![Branch {
-                op: ComparisonOp::Le,
-                threshold: Expression::Modifier(3),
-                value: Expression::Modifier(1),
-            }],
+        let got: Expression = "(d4 <= 3)".parse().unwrap();
+        let want = Expression::Comparison {
+            a: Box::new(Die(4).into()),
+            b: Box::new(Constant(3).into()),
+            op: ComparisonOp::Le,
         };
         assert_eq!(got, want);
-    }
-
-    #[test]
-    fn spell_damage() {
-        for expr in [
-            // fireball, 5th level
-            "(1d20+3){>=17:2d10}",
-            // eldritch blast, 5th level
-            "2 ((1d20+3) { >= 17: 1d10 } )",
-            // sacred flame; save
-            "(1d20+2){ <= 15: 2d8}",
-        ] {
-            let _: Expression = expr
-                .parse()
-                .unwrap_or_else(|err| panic!("failure to parse {expr}: {err}"));
-        }
-    }
-
-    #[test]
-    fn save_for_half() {
-        let _: Expression = "(1d20+2){ >= 17: 8d6 /_ 2} { 8d6 }".parse().unwrap();
-    }
-
-    fn nontrivial_comparison() -> impl Strategy<Value = ComparisonOp> {
-        prop_oneof![
-            Just(ComparisonOp::Lt),
-            Just(ComparisonOp::Le),
-            Just(ComparisonOp::Eq),
-            Just(ComparisonOp::Ge),
-            Just(ComparisonOp::Gt),
-        ]
     }
 
     fn symbol() -> impl Strategy<Value = Symbol> {
@@ -580,24 +341,16 @@ mod tests {
             .prop_map(|s| s.parse().unwrap())
     }
 
-    // Generate a nontrivial (i.e. "else") branch
-    fn branch(expr: impl Clone + Strategy<Value = Expression>) -> impl Strategy<Value = Branch> {
-        (nontrivial_comparison(), expr.clone(), expr).prop_map(|(op, threshold, value)| Branch {
-            op,
-            threshold,
-            value,
-        })
-    }
-
     /// Generate a possibly-recursive Expression.
     fn recursive_expression() -> impl Strategy<Value = Expression> {
         let leaf = proptest::prop_oneof![
-            any::<usize>().prop_map(Expression::Die),
-            any::<usize>().prop_map(Expression::Modifier),
-            symbol().prop_map(Expression::Symbol),
+            any::<usize>().prop_map(|v| Die(v).into()),
+            any::<usize>().prop_map(|v| Constant(v).into()),
+            symbol().prop_map(|s| s.into()),
         ];
         leaf.prop_recursive(3, 2, 3, |strat| {
             prop_oneof![
+                // Repetition:
                 (strat.clone(), strat.clone(), any::<Ranker>()).prop_map(
                     |(count, value, ranker)| Expression::Repeated {
                         count: Box::new(count),
@@ -605,25 +358,28 @@ mod tests {
                         ranker
                     }
                 ),
-                (strat.clone(), strat.clone()).prop_map(|(count, value)| {
-                    Expression::Product(Box::new(count), Box::new(value))
-                }),
+                // Product:
+                (strat.clone(), strat.clone())
+                    .prop_map(|(a, b)| { Expression::Product(Box::new(a), Box::new(b)) }),
+                // Division:
+                (strat.clone(), strat.clone())
+                    .prop_map(|(a, b)| { Expression::Floor(Box::new(a), Box::new(b)) }),
+                // Sum:
                 prop::collection::vec(strat.clone(), 2..5).prop_map(Expression::Sum),
-                (
-                    strat.clone(),
-                    prop::collection::vec(branch(strat.clone()), 1..3),
-                    prop::option::of(strat.clone()),
-                )
-                    .prop_map(|(target, branches, use_else)| {
-                        let mut branches = branches;
-                        if let Some(v) = use_else {
-                            branches.push(Branch::make_else(v))
-                        };
-                        Expression::Case {
-                            target: Box::new(target),
-                            branches,
-                        }
-                    })
+                // Comparison:
+                (strat.clone(), strat.clone(), any::<ComparisonOp>()).prop_map(|(a, b, op)| {
+                    Expression::Comparison {
+                        a: Box::new(a),
+                        b: Box::new(b),
+                        op,
+                    }
+                }),
+                // Binding:
+                (symbol(), strat.clone()).prop_map(|(symbol, expression)| BindingAtom::Binding {
+                    symbol,
+                    expression: Box::new(expression)
+                }
+                .into()),
             ]
         })
     }
@@ -632,8 +388,10 @@ mod tests {
         #[test]
         fn expression_roundtrip(exp in recursive_expression()) {
             let s = exp.to_string();
-            let got: Expression = s.parse().unwrap();
-            assert_eq!(got.simplify(), exp.simplify());
+            let got: Expression = s.parse().map_err(|e| {
+                TestCaseError::fail(format!("expression: {s}\n{e}"))
+            })?;
+            assert_eq!(got.simplify(), exp.simplify(), "expression: {s}");
         }
     }
 
