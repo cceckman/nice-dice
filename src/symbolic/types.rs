@@ -58,7 +58,7 @@ impl FromStr for Symbol {
 }
 
 /// A ranking function: keep highest / keep lowest / keep all.
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum Ranker {
     All,
@@ -93,7 +93,7 @@ impl std::fmt::Display for Ranker {
 }
 
 /// A comparison operation (or the trivial comparison, which is always True)
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum ComparisonOp {
     Gt,
@@ -116,11 +116,8 @@ impl std::fmt::Display for ComparisonOp {
     }
 }
 
-/// An expression tree, generic over some atom.
-///
-/// This allows the expression tree to be symbolic (if atoms include symbols) or unconditional (if
-/// atoms are not symbolic).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// An expression tree.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ExpressionTree {
     Modifier(Constant),
     Die(Die),

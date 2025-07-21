@@ -19,8 +19,8 @@ use symbolic::Symbol;
 use wasm_bindgen::prelude::*;
 
 // pub mod discrete;
+mod analysis;
 mod parse;
-use symbolic::{ComparisonOp, Ranker};
 mod symbolic;
 
 #[derive(thiserror::Error, Debug)]
@@ -29,14 +29,16 @@ pub enum Error {
     ParseError(String, ParseError<LineCol>),
     #[error("count cannot be negative; in expression {0}")]
     NegativeCount(String),
-    #[error("kept values are fewer than the count; in expression {0}")]
-    KeepTooFew(String),
+    #[error("asked to keep {0} rolls, but the expression {1} may not generate that many")]
+    KeepTooFew(usize, String),
     #[error("denominator contains 0; in expression {0}")]
     DivideByZero(String),
     #[error("invalid character {0} in symbol; symbols may only contain A-Z")]
     InvalidSymbolCharacter(char),
     #[error("symbol {0} is defined more than once")]
     SymbolRedefined(Symbol),
+    #[error("symbol {0} is not defined when used")]
+    SymbolUndefined(Symbol),
 }
 
 ///// Get the distribution of the expression as an HTML table.
