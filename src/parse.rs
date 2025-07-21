@@ -4,9 +4,9 @@ use std::str::FromStr;
 
 use peg::{error::ParseError, str::LineCol};
 
-use crate::{Error, symbolic::BindingAtom, symbolic::Constant, symbolic::Die};
+use crate::symbolic::*;
 
-type Expression = crate::symbolic::Expression<BindingAtom>;
+type Expression = crate::symbolic::ExpressionTree;
 
 peg::parser! {
     grammar dice_notation() for str {
@@ -24,11 +24,6 @@ peg::parser! {
 
         rule symbol_expr() -> Expression
             = s:symbol_token() { s.into() }
-
-        rule binding() -> Expression
-            = "[" space() symbol:symbol_token() space() ":" space() e:expression() space() "]" {
-                Expression::Atom(BindingAtom::Binding{ symbol, expression: Box::new(e) })
-            }
 
         rule paren() -> Expression
             = "(" space() e:expression() space() ")" { e }
@@ -51,7 +46,7 @@ peg::parser! {
         rule space() = quiet!{[' ' | '\n' | '\r' | '\t']*}
 
         rule pos_subterm() -> Expression
-            = binding() / repeat() / die() / modifier() / symbol_expr() / paren()
+            = repeat() / die() / modifier() / symbol_expr() / paren()
 
         rule subterm() -> Expression
             = pos_subterm()
@@ -59,7 +54,7 @@ peg::parser! {
 
         rule term() -> Expression
             = e1:subterm() space() "*" space() e2:term() { Expression::Product(Box::new(e1), Box::new(e2)) }
-            / e1:subterm() space() "/_" space() e2:term() { Expression::Floor(Box::new(e1), Box::new(e2)) }
+            / e1:subterm() space() "/" space() e2:term() { Expression::Floor(Box::new(e1), Box::new(e2)) }
             // e1:subterm() space() "/^" space() e2:subterm() { Expression::Ceiling(e1, e2) }
             / subterm()
 
@@ -79,12 +74,23 @@ peg::parser! {
             / ("<=" / "≤") { ComparisonOp::Le }
             / "<" { ComparisonOp::Lt }
 
+        rule compare_term() -> Expression
+            = sum() / paren()
+
         rule comparison() -> Expression
-            = space() a:sum() space() op:compare_op() space() b:sum()
+            = space() a:compare_term() space() op:compare_op() space() b:compare_term()
         { Expression::Comparison{a:Box::new(a), b:Box::new(b),  op} }
 
-        pub(crate) rule expression() -> Expression
+        rule symbolic_expression() -> Expression
             = comparison() / space() e:sum() space() { e }
+
+        rule binding() -> Expression
+            = "[" space() symbol:symbol_token() space() ":" e:expression() "]" tail:expression() {
+                Expression::Binding{symbol, value: Box::new(e), tail: Box::new(tail) }
+            } / symbolic_expression()
+
+        pub(crate) rule expression() -> Expression
+            = space() e:binding() space() { e }
     }
 }
 
@@ -100,14 +106,9 @@ impl Expression {
     /// Simplify the expression, where possible.
     pub fn simplify(self) -> Self {
         match self {
-            Expression::Atom(a) => match a {
-                BindingAtom::Binding { symbol, expression } => BindingAtom::Binding {
-                    symbol,
-                    expression: Box::new(expression.simplify()),
-                }
-                .into(),
-                other => other.into(),
-            },
+            Expression::Modifier(_) => self,
+            Expression::Die(_) => self,
+            Expression::Symbol(_) => self,
             Expression::Negated(inner) => {
                 let simpl = inner.simplify();
                 match simpl {
@@ -151,89 +152,20 @@ impl Expression {
                 let b = Box::new(b.simplify());
                 Expression::Comparison { a, b, op }
             }
+            ExpressionTree::Binding {
+                symbol,
+                value,
+                tail,
+            } => {
+                let value = Box::new(value.simplify());
+                let tail = Box::new(tail.simplify());
+                ExpressionTree::Binding {
+                    symbol,
+                    value,
+                    tail,
+                }
+            }
         }
-    }
-}
-
-/// Representing some portion of the expression.
-/// Restricted to capital letters, A-Z.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Symbol(String);
-
-impl std::fmt::Display for Symbol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl FromStr for Symbol {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(c) = s.chars().find(|c| !c.is_ascii_uppercase()) {
-            Err(Error::InvalidSymbolCharacter(c))
-        } else {
-            Ok(Symbol(s.to_owned()))
-        }
-    }
-}
-
-/// A ranking function: keep highest / keep lowest / keep all.
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub enum Ranker {
-    All,
-    Highest(usize),
-    Lowest(usize),
-}
-
-impl Ranker {
-    /// The minimum count of values required by this ranker.
-    pub fn count(&self) -> usize {
-        match self {
-            Ranker::All => 0,
-            Ranker::Highest(n) => *n,
-            Ranker::Lowest(n) => *n,
-        }
-    }
-}
-
-impl std::fmt::Display for Ranker {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (s, n) = match self {
-            Ranker::All => return Ok(()),
-            Ranker::Highest(n) => ("kh", *n),
-            Ranker::Lowest(n) => ("kl", *n),
-        };
-        if n == 1 {
-            write!(f, "{s}")
-        } else {
-            write!(f, "{s}{n}")
-        }
-    }
-}
-
-/// A comparison operation (or the trivial comparison, which is always True)
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub enum ComparisonOp {
-    Gt,
-    Ge,
-    Eq,
-    Le,
-    Lt,
-}
-
-impl std::fmt::Display for ComparisonOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let c = match self {
-            ComparisonOp::Gt => '>',
-            ComparisonOp::Ge => '≥',
-            ComparisonOp::Eq => '=',
-            ComparisonOp::Le => '≤',
-            ComparisonOp::Lt => '<',
-        };
-        write!(f, "{c}")
     }
 }
 
@@ -341,8 +273,9 @@ mod tests {
             .prop_map(|s| s.parse().unwrap())
     }
 
-    /// Generate a possibly-recursive Expression.
-    fn recursive_expression() -> impl Strategy<Value = Expression> {
+    /// Generate a symbolic Expression.
+    /// Note: cannot contain Bindings.
+    fn symbolic_expression() -> impl Strategy<Value = Expression> {
         let leaf = proptest::prop_oneof![
             any::<usize>().prop_map(|v| Die(v).into()),
             any::<usize>().prop_map(|v| Constant(v).into()),
@@ -375,18 +308,20 @@ mod tests {
                     }
                 }),
                 // Binding:
-                (symbol(), strat.clone()).prop_map(|(symbol, expression)| BindingAtom::Binding {
-                    symbol,
-                    expression: Box::new(expression)
-                }
-                .into()),
+                (symbol(), strat.clone(), strat.clone()).prop_map(|(symbol, value, tail)| {
+                    Expression::Binding {
+                        symbol,
+                        value: Box::new(value),
+                        tail: Box::new(tail),
+                    }
+                }),
             ]
         })
     }
 
     proptest! {
         #[test]
-        fn expression_roundtrip(exp in recursive_expression()) {
+        fn expression_roundtrip(exp in symbolic_expression()) {
             let s = exp.to_string();
             let got: Expression = s.parse().map_err(|e| {
                 TestCaseError::fail(format!("expression: {s}\n{e}"))
@@ -397,7 +332,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn expression_without_space(exp in recursive_expression()) {
+        fn expression_without_space(exp in symbolic_expression()) {
             let s = exp.to_string();
             let s : String = s.chars().filter(|c| *c != ' ').collect();
             let got: Expression = s.parse().unwrap();

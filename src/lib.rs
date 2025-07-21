@@ -1,14 +1,26 @@
 //! Utilities for working with dice notation.
+//!
+//! Dice expressions are represented using the `types::Expression` type.
+//! The `AtomT` type parameter of an expression maps to each phase of analysis:
+//!
+//! 1.  An expression is parsed into a `parse::Expression`. In this expression, bindings may be
+//!     present as normal expressions, and no consistency checks are performed between symbols
+//!     and bindings (duplicate bindings or unbound symbols are allowed).
+//! 2.  A `parse::Expression` can be fallibily converted into a `normalized::Expression`.
+//!     This step extracts bindings and validates symbol references.
+//! 3.  Finally, during evaluation, each combination of bindings is generated, and replacements
+//!     performed in the expression tree. This generates an `evaluation::Expression`.
+//!
 
 // use discrete::Distribution;
 use maud::PreEscaped;
-use parse::Symbol;
 use peg::{error::ParseError, str::LineCol};
+use symbolic::Symbol;
 use wasm_bindgen::prelude::*;
 
 // pub mod discrete;
 mod parse;
-pub use parse::{ComparisonOp, Ranker};
+use symbolic::{ComparisonOp, Ranker};
 mod symbolic;
 
 #[derive(thiserror::Error, Debug)]
