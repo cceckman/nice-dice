@@ -116,59 +116,70 @@ impl std::fmt::Display for ComparisonOp {
     }
 }
 
+/// The ExpressionTree construct wraps all expressions in a tag type implementing this trait.
+pub trait ExpressionWrapper: Sized {
+    fn inner(&self) -> &ExpressionTree<Self>;
+}
+
 /// An expression tree.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ExpressionTree {
+pub enum ExpressionTree<T> {
     Modifier(Constant),
     Die(Die),
     Symbol(Symbol),
 
-    Negated(Box<Self>),
+    Negated(Box<T>),
     Repeated {
-        count: Box<Self>,
-        value: Box<Self>,
+        count: Box<T>,
+        value: Box<T>,
         ranker: Ranker,
     },
-    Product(Box<Self>, Box<Self>),
-    Sum(Vec<Self>),
-    Floor(Box<Self>, Box<Self>),
+    Product(Box<T>, Box<T>),
+    Sum(Vec<T>),
+    Floor(Box<T>, Box<T>),
     Comparison {
-        a: Box<Self>,
-        b: Box<Self>,
+        a: Box<T>,
+        b: Box<T>,
         op: ComparisonOp,
     },
     Binding {
         symbol: Symbol,
-        value: Box<ExpressionTree>,
-        tail: Box<ExpressionTree>,
+        value: Box<T>,
+        tail: Box<T>,
     },
 }
 
-impl From<Die> for ExpressionTree {
+impl<T> From<Die> for ExpressionTree<T> {
     fn from(value: Die) -> Self {
         ExpressionTree::Die(value)
     }
 }
 
-impl From<Constant> for ExpressionTree {
+impl<T> From<Constant> for ExpressionTree<T> {
     fn from(value: Constant) -> Self {
         ExpressionTree::Modifier(value)
     }
 }
 
-impl From<Symbol> for ExpressionTree {
+impl<T> From<Symbol> for ExpressionTree<T> {
     fn from(value: Symbol) -> Self {
         Self::Symbol(value)
     }
 }
 
-impl ExpressionTree {
+impl<T> ExpressionTree<T>
+where
+    T: ExpressionWrapper,
+{
     fn with_paren(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({self})")
     }
 }
 
-impl std::fmt::Display for ExpressionTree {
+impl<T> std::fmt::Display for ExpressionTree<T>
+where
+    T: ExpressionWrapper,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // TODO: Use alternate format specifier, e.g. '{:.}',
         // to switch up spaces, multiplication signs, etc.
@@ -182,12 +193,14 @@ impl std::fmt::Display for ExpressionTree {
                 value,
                 ranker,
             } => {
-                if matches!(&**count, ExpressionTree::Modifier(_)) {
+                let count = count.inner();
+                let value = value.inner();
+                if matches!(count, ExpressionTree::Modifier(_)) {
                     count.fmt(f)?
                 } else {
                     count.with_paren(f)?
                 };
-                if matches!(&**value, ExpressionTree::Die(_)) {
+                if matches!(value, ExpressionTree::Die(_)) {
                     value.fmt(f)?
                 } else {
                     value.with_paren(f)?
@@ -195,21 +208,24 @@ impl std::fmt::Display for ExpressionTree {
                 write!(f, "{ranker}")
             }
             ExpressionTree::Negated(expression) => {
+                let n = expression.inner();
                 if matches!(
-                    &**expression,
+                    n,
                     ExpressionTree::Die(_)
                         | ExpressionTree::Modifier(_)
                         | ExpressionTree::Symbol(_)
                         | ExpressionTree::Repeated { .. }
                 ) {
-                    expression.fmt(f)
+                    n.fmt(f)
                 } else {
-                    expression.with_paren(f)
+                    n.with_paren(f)
                 }
             }
             ExpressionTree::Product(a, b) => {
+                let a = a.inner();
+                let b = b.inner();
                 if matches!(
-                    &**a,
+                    a,
                     ExpressionTree::Die(_)
                         | ExpressionTree::Modifier(_)
                         | ExpressionTree::Symbol(_)
@@ -224,7 +240,7 @@ impl std::fmt::Display for ExpressionTree {
                 write!(f, " * ")?;
 
                 if matches!(
-                    &**b,
+                    b,
                     ExpressionTree::Die(_)
                         | ExpressionTree::Modifier(_)
                         | ExpressionTree::Symbol(_)
@@ -239,8 +255,11 @@ impl std::fmt::Display for ExpressionTree {
                 }
             }
             ExpressionTree::Floor(a, b) => {
+                let a = a.inner();
+                let b = b.inner();
+
                 if matches!(
-                    &**a,
+                    a,
                     ExpressionTree::Die(_)
                         | ExpressionTree::Modifier(_)
                         | ExpressionTree::Symbol(_)
@@ -255,7 +274,7 @@ impl std::fmt::Display for ExpressionTree {
                 write!(f, " / ")?;
 
                 if matches!(
-                    &**b,
+                    b,
                     ExpressionTree::Die(_)
                         | ExpressionTree::Modifier(_)
                         | ExpressionTree::Symbol(_)
@@ -270,12 +289,12 @@ impl std::fmt::Display for ExpressionTree {
                 }
             }
             ExpressionTree::Sum(es) => {
-                fn write_element(
-                    e: &ExpressionTree,
+                fn write_element<T: ExpressionWrapper>(
+                    e: &ExpressionTree<T>,
                     f: &mut std::fmt::Formatter<'_>,
                 ) -> Result<(), std::fmt::Error> {
                     let e = match e {
-                        ExpressionTree::Negated(inner) => inner,
+                        ExpressionTree::Negated(inner) => inner.inner(),
                         _ => e,
                     };
                     match e {
@@ -289,6 +308,7 @@ impl std::fmt::Display for ExpressionTree {
                     }
                 }
                 for (i, e) in es.iter().enumerate() {
+                    let e = e.inner();
                     if i != 0 {
                         let c = if let ExpressionTree::Negated(_) = e {
                             '-'
@@ -303,8 +323,10 @@ impl std::fmt::Display for ExpressionTree {
                 Ok(())
             }
             ExpressionTree::Comparison { a, b, op } => {
-                fn write_element(
-                    e: &ExpressionTree,
+                let a = a.inner();
+                let b = b.inner();
+                fn write_element<T: ExpressionWrapper>(
+                    e: &ExpressionTree<T>,
                     f: &mut std::fmt::Formatter<'_>,
                 ) -> Result<(), std::fmt::Error> {
                     match e {
@@ -323,6 +345,8 @@ impl std::fmt::Display for ExpressionTree {
                 value,
                 tail,
             } => {
+                let value = value.inner();
+                let tail = tail.inner();
                 write!(f, "[{symbol}: {value}] {tail}")
             }
         }

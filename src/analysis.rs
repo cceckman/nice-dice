@@ -8,7 +8,8 @@
 
 use crate::{
     Error,
-    symbolic::{ExpressionTree, Symbol},
+    parse::RawExpression,
+    symbolic::{ExpressionTree, ExpressionWrapper, Symbol},
 };
 
 /// An dice expression that is well-formed per semantic analysis.
@@ -16,16 +17,25 @@ use crate::{
 /// - All symbols are declared before use, in the context of their use.
 /// -
 #[derive(Debug)]
-pub struct WellFormed(ExpressionTree);
-
-type RawExpression = ExpressionTree;
+pub struct WellFormed(ExpressionTree<WellFormed>);
 
 impl TryFrom<RawExpression> for WellFormed {
     type Error = Error;
 
     fn try_from(value: RawExpression) -> Result<Self, Self::Error> {
-        WellFormed::check(&value, &AvailableBinding::Root)?;
-        Ok(WellFormed(value))
+        WellFormed::check(&value, &AvailableBinding::Root)
+    }
+}
+
+impl From<ExpressionTree<WellFormed>> for WellFormed {
+    fn from(value: ExpressionTree<WellFormed>) -> Self {
+        WellFormed(value)
+    }
+}
+
+impl ExpressionWrapper for WellFormed {
+    fn inner(&self) -> &ExpressionTree<Self> {
+        &self.0
     }
 }
 
@@ -63,47 +73,57 @@ impl AvailableBinding<'_> {
 impl WellFormed {
     /// Recursively check that this expression is well-formed, given the provided stack of
     /// bindings.
-    fn check<'a>(target: &'a RawExpression, symbols: &AvailableBinding) -> Result<(), Error> {
-        match target {
-            ExpressionTree::Modifier(_) => Ok(()),
-            ExpressionTree::Die(_) => Ok(()),
+    fn check(target: &RawExpression, symbols: &AvailableBinding) -> Result<WellFormed, Error> {
+        let tree: Result<ExpressionTree<WellFormed>, _> = match target.inner() {
+            ExpressionTree::Modifier(m) => Ok(ExpressionTree::Modifier(*m)),
+            ExpressionTree::Die(d) => Ok(ExpressionTree::Die(*d)),
             ExpressionTree::Symbol(symbol) => {
                 if symbols.search(symbol).is_some() {
-                    Ok(())
+                    Ok(ExpressionTree::Symbol(symbol.to_owned()))
                 } else {
                     Err(Error::SymbolUndefined(symbol.to_owned()))
                 }
             }
-            ExpressionTree::Negated(expression_tree) => WellFormed::check(expression_tree, symbols),
+            ExpressionTree::Negated(n) => {
+                let n = WellFormed::check(n, symbols)?;
+                Ok(ExpressionTree::Negated(Box::new(n)))
+            }
             ExpressionTree::Repeated {
                 count,
                 value,
                 ranker,
             } => {
-                // Individually well-formed:
-                WellFormed::check(count, symbols)
-                    .and_then(|_| WellFormed::check(value, symbols))?;
+                let count = Box::new(WellFormed::check(count, symbols)?);
+                let value = Box::new(WellFormed::check(value, symbols)?);
 
-                // And also, we are guaranteed to have at least the given number.
-                if count.min() < ranker.count() {
-                    return Err(Error::KeepTooFew(ranker.count(), count.to_string()));
-                }
-                Ok(())
+                Ok(ExpressionTree::Repeated {
+                    count,
+                    value,
+                    ranker: *ranker,
+                })
             }
             ExpressionTree::Product(a, b) => {
-                WellFormed::check(a, symbols).and_then(|_| WellFormed::check(b, symbols))
+                let a = Box::new(WellFormed::check(a, symbols)?);
+                let b = Box::new(WellFormed::check(b, symbols)?);
+                Ok(ExpressionTree::Product(a, b))
             }
             ExpressionTree::Sum(expression_trees) => {
-                for es in expression_trees.iter() {
-                    WellFormed::check(es, symbols)?;
-                }
-                Ok(())
+                let r: Result<_, _> = expression_trees
+                    .iter()
+                    .map(|e| WellFormed::check(e, symbols))
+                    .collect();
+                let es = r?;
+                Ok(ExpressionTree::Sum(es))
             }
             ExpressionTree::Floor(a, b) => {
-                WellFormed::check(a, symbols).and_then(|_| WellFormed::check(b, symbols))
+                let a = Box::new(WellFormed::check(a, symbols)?);
+                let b = Box::new(WellFormed::check(b, symbols)?);
+                Ok(ExpressionTree::Floor(a, b))
             }
-            ExpressionTree::Comparison { a, b, op: _ } => {
-                WellFormed::check(a, symbols).and_then(|_| WellFormed::check(b, symbols))
+            ExpressionTree::Comparison { a, b, op } => {
+                let a = Box::new(WellFormed::check(a, symbols)?);
+                let b = Box::new(WellFormed::check(b, symbols)?);
+                Ok(ExpressionTree::Comparison { a, b, op: *op })
             }
 
             ExpressionTree::Binding {
@@ -114,16 +134,21 @@ impl WellFormed {
                 if symbols.search(symbol).is_some() {
                     return Err(Error::SymbolRedefined(symbol.to_owned()));
                 }
-                WellFormed::check(value, symbols)?;
+                let value = WellFormed::check(value, symbols)?;
                 let next_avail = AvailableBinding::Chain {
                     defined: symbol,
-                    definition: WellFormed
+                    definition: &value,
                     prev: symbols,
-
                 };
-                WellFormed::check(tail, &next_avail)
+                let tail = WellFormed::check(tail, &next_avail)?;
+                Ok(ExpressionTree::Binding {
+                    symbol: symbol.clone(),
+                    value: Box::new(value),
+                    tail: Box::new(tail),
+                })
             }
-        }
+        };
+        tree.map(WellFormed)
     }
 }
 
@@ -135,8 +160,11 @@ mod tests {
     fn undefined_reference() {
         let v: RawExpression = "[ABC: 1d20] BCD".parse().unwrap();
         let e = std::convert::TryInto::<WellFormed>::try_into(v).unwrap_err();
-        let e_target = "BCD".parse().unwrap();
-        assert!(matches!(e, crate::Error::SymbolUndefined(sym) if sym == e_target));
+        let e_target: Symbol = "BCD".parse().unwrap();
+        match e {
+            crate::Error::SymbolUndefined(sym) if sym == e_target => (),
+            x => panic!("unexpected error: {x}"),
+        }
     }
 
     #[test]
@@ -159,13 +187,13 @@ mod tests {
     fn keep_enough_high() {
         let v: RawExpression = "3d20kh4".parse().unwrap();
         let e = std::convert::TryInto::<WellFormed>::try_into(v).unwrap_err();
-        assert!(matches!(e, crate::Error::KeepTooFew(_)));
+        assert!(matches!(e, crate::Error::KeepTooFew(_, _)));
     }
 
     #[test]
     fn keep_enough_low() {
         let v: RawExpression = "3d20kl4".parse().unwrap();
         let e = std::convert::TryInto::<WellFormed>::try_into(v).unwrap_err();
-        assert!(matches!(e, crate::Error::KeepTooFew(_)));
+        assert!(matches!(e, crate::Error::KeepTooFew(_, _)));
     }
 }
