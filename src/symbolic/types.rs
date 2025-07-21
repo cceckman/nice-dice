@@ -70,7 +70,7 @@ impl Ranker {
     /// The minimum count of values required by this ranker.
     pub fn count(&self) -> usize {
         match self {
-            Ranker::All => 0,
+            Ranker::All => 1,
             Ranker::Highest(n) => *n,
             Ranker::Lowest(n) => *n,
         }
