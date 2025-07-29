@@ -15,7 +15,7 @@ peg::parser! {
             = "d" n:number() { Die(n).into() }
 
         rule modifier() -> RawExpression
-            = n:number() { Constant(n).into() }
+            = "+"? n:number() { Constant(n).into() }
 
         rule symbol_token() -> Symbol
             = s:$(['a'..='z'|'A'..='Z']+) {? s.parse().or(Err("symbol")) }
@@ -297,6 +297,16 @@ mod tests {
         }
         .into();
         assert_eq!(got, want);
+    }
+
+    #[test]
+    fn explicit_modifier_sign() {
+        for (i, e) in ["[CHA: +2] CHA", "+3", "-3", "1 - +3", "1 + -+3", "-+3"]
+            .into_iter()
+            .enumerate()
+        {
+            let _: RawExpression = e.parse().unwrap_or_else(|_| panic!("case {i} failed"));
+        }
     }
 
     fn symbol() -> impl Strategy<Value = Symbol> {

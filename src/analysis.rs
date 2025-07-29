@@ -467,4 +467,12 @@ mod tests {
             assert_eq!(e.maximum(), max, "case {i} for expression {e}");
         }
     }
+
+    #[test]
+    fn attack_roll() {
+        // Our key expression: the attack roll for a warlock casting two beams of Eldrith Blast,
+        // with Agonizing Blast, including critical effects.
+        const EXPR: &str = "2([AC: 16] [ATK: 1d20] [CHA: +5] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA))";
+        let _: WellFormed = EXPR.parse().unwrap();
+    }
 }
