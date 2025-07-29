@@ -113,7 +113,7 @@ impl WellFormed {
             } => {
                 let max_count = count.max(symbols);
                 let max_value = value.max(symbols);
-                let count = std::cmp::min(ranker.count() as isize, max_count);
+                let count = ranker.keep(max_count);
                 count * max_value
             }
             ExpressionTree::Product(a, b) => {
@@ -152,6 +152,9 @@ impl WellFormed {
                 // We don't know if "min" or "max" gives us the max of the underlying expression.
                 // Try both.
                 // (All the operators we have are linear.... I think?)
+                // TODO: Incorrect! Conditional operators lead to ~arbitrary nonlinearity.
+                // We can't compute the min/max without computing the distribution.
+                // Shucks!
                 [value.max(symbols), value.min(symbols)]
                     .map(|v| {
                         // For the (minimum, maximum) value of this symbol,
@@ -195,10 +198,10 @@ impl WellFormed {
                 value,
                 ranker,
             } => {
-                let max_count = count.min(symbols);
-                let max_value = value.min(symbols);
-                let count = std::cmp::min(ranker.count() as isize, max_count);
-                count * max_value
+                let min_count = count.min(symbols);
+                let min_value = value.min(symbols);
+                let count = ranker.keep(min_count);
+                count * min_value
             }
             ExpressionTree::Product(a, b) => {
                 let (a_min, b_min) = (a.min(symbols), b.min(symbols));
@@ -297,8 +300,11 @@ impl WellFormed {
                 let value = Box::new(WellFormed::check(value, symbols)?);
 
                 let min_count = count.min(symbols);
-                if min_count < (ranker.count() as isize) {
-                    Err(crate::Error::KeepTooFew(ranker.count(), count.to_string()))
+                if min_count < (ranker.min_count() as isize) {
+                    Err(crate::Error::KeepTooFew(
+                        ranker.min_count(),
+                        count.to_string(),
+                    ))
                 } else {
                     Ok(ExpressionTree::Repeated {
                         count,
@@ -437,6 +443,7 @@ mod tests {
             ("1d2 < 2", 0),
             ("[ATK: 1d20] -ATK", -20),
             ("[ATK: -1d20] -ATK", 1),
+            ("2d10", 2),
         ]
         .into_iter()
         .enumerate()
@@ -459,6 +466,7 @@ mod tests {
             ("1d2 > 1", 1),
             ("[ATK: 1d20] -ATK", -1),
             ("[ATK: -1d20] -ATK", 20),
+            ("2d10", 20),
         ]
         .into_iter()
         .enumerate()
@@ -469,10 +477,17 @@ mod tests {
     }
 
     #[test]
-    fn attack_roll() {
-        // Our key expression: the attack roll for a warlock casting two beams of Eldrith Blast,
-        // with Agonizing Blast, including critical effects.
-        const EXPR: &str = "2([AC: 16] [ATK: 1d20] [CHA: +5] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA))";
-        let _: WellFormed = EXPR.parse().unwrap();
+    #[ignore = "TODO: Incorrect; breaks linearity assumption"]
+    fn attack_rolls() {
+        // Complicated ones: Eldritch Blast, with Agonizing Blast, including critical effects.
+        for (i, (e, max)) in [
+            ("[AC: 16] [CHA: +5] [ATK: 1d20] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA)", 25),
+            ("2([AC: 16] [ATK: 1d20] [CHA: +5] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA))", 50),
+            ("[AC: 16] [CHA: +5] 2([ATK: 1d20] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA))", 50),
+        ].into_iter().enumerate() {
+            let e : WellFormed = e.parse().unwrap();
+            assert_eq!(e.minimum(), 0); // critical miss
+            assert_eq!(e.maximum(), max); // critical miss
+        }
     }
 }

@@ -68,11 +68,20 @@ pub enum Ranker {
 
 impl Ranker {
     /// The minimum count of values required by this ranker.
-    pub fn count(&self) -> usize {
+    pub fn min_count(&self) -> usize {
         match self {
             Ranker::All => 1,
             Ranker::Highest(n) => *n,
             Ranker::Lowest(n) => *n,
+        }
+    }
+
+    /// How many to keep, out of n rolls.
+    pub fn keep(&self, n: isize) -> isize {
+        match self {
+            Ranker::All => n,
+            Ranker::Highest(m) => std::cmp::min(*m as isize, n),
+            Ranker::Lowest(m) => std::cmp::min(*m as isize, n),
         }
     }
 }

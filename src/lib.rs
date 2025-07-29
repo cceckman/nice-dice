@@ -1,16 +1,15 @@
 //! Utilities for working with dice notation.
 //!
-//! Dice expressions are represented using the `types::Expression` type.
-//! The `AtomT` type parameter of an expression maps to each phase of analysis:
+//! For example, here's the roll for:
+//! - A level 5 warlock with +5 Charisma modifier
+//! - with the Agonizing Blast feature
+//! - casting Eldritch Blast (two beams)
+//! - against a creature with armor class 16
+//! - including critical effects
 //!
-//! 1.  An expression is parsed into a `parse::Expression`. In this expression, bindings may be
-//!     present as normal expressions, and no consistency checks are performed between symbols
-//!     and bindings (duplicate bindings or unbound symbols are allowed).
-//! 2.  A `parse::Expression` can be fallibily converted into a `normalized::Expression`.
-//!     This step extracts bindings and validates symbol references.
-//! 3.  Finally, during evaluation, each combination of bindings is generated, and replacements
-//!     performed in the expression tree. This generates an `evaluation::Expression`.
-//!
+//! ```
+//! [AC: 16] [CHA: +5] 2([ATK: 1d20] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA))";
+//! ```
 
 // use discrete::Distribution;
 use maud::PreEscaped;
