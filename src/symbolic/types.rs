@@ -216,8 +216,9 @@ where
                         | ExpressionTree::Symbol(_)
                         | ExpressionTree::Repeated { .. }
                 ) {
-                    n.fmt(f)
+                    write!(f, "-{n}")
                 } else {
+                    write!(f, "-")?;
                     n.with_paren(f)
                 }
             }
@@ -289,14 +290,20 @@ where
                 }
             }
             ExpressionTree::Sum(es) => {
-                fn write_element<T: ExpressionWrapper>(
-                    e: &ExpressionTree<T>,
-                    f: &mut std::fmt::Formatter<'_>,
-                ) -> Result<(), std::fmt::Error> {
-                    let e = match e {
-                        ExpressionTree::Negated(inner) => inner.inner(),
-                        _ => e,
+                for (i, e) in es.iter().enumerate() {
+                    let e = e.inner();
+
+                    // Use - instead of + if the expression is negated and not at the
+                    // head of the list.
+                    let (e, c) = match (e, i) {
+                        (_, 0) => (e, None),
+                        (ExpressionTree::Negated(inner), _) => (inner.inner(), Some('-')),
+                        _ => (e, Some('+')),
                     };
+                    if let Some(c) = c {
+                        write!(f, "{c}")?;
+                    }
+
                     match e {
                         ExpressionTree::Die(_)
                         | ExpressionTree::Modifier(_)
@@ -305,19 +312,7 @@ where
                         | ExpressionTree::Floor(_, _)
                         | ExpressionTree::Product(_, _) => e.fmt(f),
                         _ => e.with_paren(f),
-                    }
-                }
-                for (i, e) in es.iter().enumerate() {
-                    let e = e.inner();
-                    if i != 0 {
-                        let c = if let ExpressionTree::Negated(_) = e {
-                            '-'
-                        } else {
-                            '+'
-                        };
-                        write!(f, " {c} ")?;
-                    }
-                    write_element(e, f)?;
+                    }?;
                 }
 
                 Ok(())

@@ -11,3 +11,5 @@ cc 99f1af8a45b3705e339b29b7251f9c50064924d1a6609705040bc71c8f8221fe # shrinks to
 cc e50f8fc779f92697545b5b72d9260fe7cb7298ec628ab435914c421d23d0d739 # shrinks to exp = Comparison { a: Atom(Die(Die(0))), b: Sum([Atom(Die(Die(0))), Atom(Die(Die(0)))]), op: Gt }
 cc a93e410f7991126696d3ffd5e1fa3f17ac39751bd5a9479e9dda7548ddd4d16a # shrinks to exp = Floor(Atom(Binding { symbol: Symbol("A"), expression: Atom(Die(Die(0))), tail: Atom(Die(Die(0))) }), Atom(Die(Die(0))))
 cc 57b12cb295215826fcfe09fbed1fe5fb79bb0ff278fd227298b0b60561f2e4ad # shrinks to exp = Comparison { a: Die(Die(0)), b: Binding { symbol: Symbol("A"), value: Die(Die(0)), tail: Die(Die(0)) }, op: Gt }
+cc d9a77916de950953f6d07257134dfaf8b09ebb63b840fddb836f3d09f13406d9 # shrinks to exp = RawExpression(Sum([RawExpression(Negated(RawExpression(Die(Die(0))))), RawExpression(Die(Die(0)))]))
+cc 589720e12fae4912a1e8c6b7dd6b317a89cb3d66ff94e8ffad828b4ab0515cf6 # shrinks to exp = RawExpression(Sum([RawExpression(Die(Die(0))), RawExpression(Negated(RawExpression(Die(Die(0)))))]))

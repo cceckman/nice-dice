@@ -172,10 +172,9 @@ impl RawExpression {
                 if es.len() == 1 {
                     es.pop().unwrap()
                 } else {
-                    ExpressionTree::Sum(es).into()
+                    RawExpression(ExpressionTree::Sum(es))
                 }
             }
-            .into(),
             ExpressionTree::Comparison { a, b, op } => {
                 let a = Box::new(a.simplify());
                 let b = Box::new(b.simplify());
@@ -316,6 +315,10 @@ mod tests {
         ];
         leaf.prop_recursive(3, 2, 3, |strat| {
             prop_oneof![
+                // Negation:
+                strat
+                    .clone()
+                    .prop_map(|v| ExpressionTree::Negated(Box::new(v))),
                 // Repetition:
                 (strat.clone(), strat.clone(), any::<Ranker>()).prop_map(
                     |(count, value, ranker)| ExpressionTree::Repeated {
