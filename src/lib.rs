@@ -31,7 +31,7 @@ pub enum Error {
     NegativeCount(String),
     #[error("asked to keep {0} rolls, but the expression {1} may not generate that many")]
     KeepTooFew(usize, String),
-    #[error("denominator contains 0; in expression {0}")]
+    #[error("denominator contains 0 in its range; in expression {0}")]
     DivideByZero(String),
     #[error("invalid character {0} in symbol; symbols may only contain A-Z")]
     InvalidSymbolCharacter(char),
@@ -39,6 +39,8 @@ pub enum Error {
     SymbolRedefined(Symbol),
     #[error("symbol {0} is not defined when used")]
     SymbolUndefined(Symbol),
+    #[error("d0 is not a valid die")]
+    ZeroFacedDie(),
 }
 
 ///// Get the distribution of the expression as an HTML table.
