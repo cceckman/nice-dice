@@ -36,8 +36,6 @@ pub enum Error {
     InvalidSymbolCharacter(char),
     #[error("symbol {0} is defined more than once")]
     SymbolRedefined(Symbol),
-    #[error("symbol {0} is not defined when used")]
-    SymbolUndefined(Symbol),
     #[error("d0 is not a valid die")]
     ZeroFacedDie(),
 }
