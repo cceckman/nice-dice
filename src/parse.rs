@@ -200,6 +200,8 @@ impl RawExpression {
 
 #[cfg(test)]
 mod tests {
+    use crate::properties;
+
     use super::*;
     use proptest::prelude::*;
 
@@ -309,58 +311,31 @@ mod tests {
         }
     }
 
-    fn symbol() -> impl Strategy<Value = Symbol> {
-        proptest::string::string_regex("[A-Z]+")
-            .expect("valid regex")
-            .prop_map(|s| s.parse().unwrap())
-    }
-
     /// Generate a symbolic Expression.
-    /// Note: cannot contain Bindings.
     fn symbolic_expression() -> impl Strategy<Value = RawExpression> {
         let leaf = proptest::prop_oneof![
             any::<usize>().prop_map(|v| Die(v).into()),
             any::<usize>().prop_map(|v| Constant(v).into()),
-            symbol().prop_map(|s| s.into()),
+            properties::symbol().prop_map(|s| s.into()),
         ];
         leaf.prop_recursive(3, 2, 3, |strat| {
             prop_oneof![
-                // Negation:
-                strat
-                    .clone()
-                    .prop_map(|v| ExpressionTree::Negated(Box::new(v))),
-                // Repetition:
-                (strat.clone(), strat.clone(), any::<Ranker>()).prop_map(
-                    |(count, value, ranker)| ExpressionTree::Repeated {
-                        count: Box::new(count),
-                        value: Box::new(value),
-                        ranker
+                properties::negated(&strat),
+                properties::repeated(&strat),
+                properties::product(&strat),
+                properties::floor(&strat),
+                properties::sum(&strat),
+                properties::comparison(&strat),
+                // Binding:
+                (properties::symbol(), strat.clone(), strat.clone()).prop_map(
+                    |(symbol, value, tail)| {
+                        ExpressionTree::Binding {
+                            symbol,
+                            value: Box::new(value),
+                            tail: Box::new(tail),
+                        }
                     }
                 ),
-                // Product:
-                (strat.clone(), strat.clone())
-                    .prop_map(|(a, b)| { ExpressionTree::Product(Box::new(a), Box::new(b)) }),
-                // Division:
-                (strat.clone(), strat.clone())
-                    .prop_map(|(a, b)| { ExpressionTree::Floor(Box::new(a), Box::new(b)) }),
-                // Sum:
-                prop::collection::vec(strat.clone(), 2..5).prop_map(ExpressionTree::Sum),
-                // Comparison:
-                (strat.clone(), strat.clone(), any::<ComparisonOp>()).prop_map(|(a, b, op)| {
-                    ExpressionTree::Comparison {
-                        a: Box::new(a),
-                        b: Box::new(b),
-                        op,
-                    }
-                }),
-                // Binding:
-                (symbol(), strat.clone(), strat.clone()).prop_map(|(symbol, value, tail)| {
-                    ExpressionTree::Binding {
-                        symbol,
-                        value: Box::new(value),
-                        tail: Box::new(tail),
-                    }
-                }),
             ]
             .prop_map(|v| v.into())
         })

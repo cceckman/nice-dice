@@ -7,9 +7,11 @@
 //! - against a creature with armor class 16
 //! - including critical effects
 //!
+//! ```ignore
+//! [AC: 16] [CHA: +5] 2([ATK: 1d20] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA))
 //! ```
-//! [AC: 16] [CHA: +5] 2([ATK: 1d20] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA))";
-//! ```
+
+use std::collections::HashSet;
 
 // use discrete::Distribution;
 use maud::PreEscaped;
@@ -21,6 +23,9 @@ use wasm_bindgen::prelude::*;
 mod analysis;
 mod parse;
 mod symbolic;
+
+#[cfg(test)]
+mod properties;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -34,10 +39,15 @@ pub enum Error {
     DivideByZero(String),
     #[error("invalid character {0} in symbol; symbols may only contain A-Z")]
     InvalidSymbolCharacter(char),
-    #[error("symbol {0} is defined more than once")]
-    SymbolRedefined(Symbol),
+    #[error("symbol(s) used when not bound: {}", list_symbols(.0))]
+    UnboundSymbols(HashSet<Symbol>),
     #[error("d0 is not a valid die")]
     ZeroFacedDie(),
+}
+
+fn list_symbols(s: &HashSet<Symbol>) -> String {
+    let strs: Vec<_> = s.iter().map(|v| v.to_string()).collect();
+    strs.join(", ")
 }
 
 ///// Get the distribution of the expression as an HTML table.
