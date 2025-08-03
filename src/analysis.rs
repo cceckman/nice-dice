@@ -10,12 +10,12 @@
 //! TODO: Conditionals are nonlinear, so we can't generate min/max.
 //! We have to just handle the whole path.
 
-use std::{collections::HashSet, fmt::Display, str::FromStr};
+use std::{collections::HashSet, fmt::Display};
 
 use crate::{
     Error,
     parse::RawExpression,
-    symbolic::{Constant, Die, ExpressionTree, ExpressionWrapper, Symbol},
+    symbolic::{ExpressionTree, ExpressionWrapper, Symbol},
 };
 
 impl TryFrom<RawExpression> for Closed {
@@ -45,6 +45,20 @@ impl Display for Closed {
     }
 }
 
+type ClosureResult = Result<Closed, HashSet<Symbol>>;
+
+fn combine_close_results(
+    a: ClosureResult,
+    b: ClosureResult,
+) -> Result<(Closed, Closed), HashSet<Symbol>> {
+    match (a, b) {
+        (Ok(a), Ok(b)) => Ok((a, b)),
+        (Err(a), Err(b)) => Err(a.into_iter().chain(b).collect()),
+        (Err(a), _) => Err(a),
+        (_, Err(b)) => Err(b),
+    }
+}
+
 /// Evaluate the expression under the provided bindings.
 ///
 /// If the expression is closed under those bindings, return Ok();
@@ -52,7 +66,7 @@ impl Display for Closed {
 fn closed_under(
     bindings: &AvailableBinding<Closed>,
     tree: &ExpressionTree<RawExpression>,
-) -> Result<Closed, HashSet<Symbol>> {
+) -> ClosureResult {
     match tree {
         ExpressionTree::Modifier(a) => Ok(Closed(ExpressionTree::Modifier(*a))),
         ExpressionTree::Die(a) => Ok(Closed(ExpressionTree::Die(*a))),
@@ -72,8 +86,10 @@ fn closed_under(
             value,
             ranker,
         } => {
-            let count = closed_under(bindings, count.inner())?;
-            let value = closed_under(bindings, value.inner())?;
+            let (count, value) = combine_close_results(
+                closed_under(bindings, count.inner()),
+                closed_under(bindings, value.inner()),
+            )?;
             let count = Box::new(count);
             let value = Box::new(value);
             Ok(Closed(ExpressionTree::Repeated {
@@ -83,26 +99,44 @@ fn closed_under(
             }))
         }
         ExpressionTree::Product(a, b) => {
-            let a = closed_under(bindings, a.inner())?;
-            let b = closed_under(bindings, b.inner())?;
+            let (a, b) = combine_close_results(
+                closed_under(bindings, a.inner()),
+                closed_under(bindings, b.inner()),
+            )?;
             Ok(Closed(ExpressionTree::Product(Box::new(a), Box::new(b))))
         }
         ExpressionTree::Sum(items) => {
-            let items: Result<_, _> = items
+            let mut unbound: HashSet<Symbol> = Default::default();
+            let items: Vec<Closed> = items
                 .iter()
-                .map(|item| closed_under(bindings, item.inner()))
+                .filter_map(|item| match closed_under(bindings, item.inner()) {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        for e in e {
+                            unbound.insert(e);
+                        }
+                        None
+                    }
+                })
                 .collect();
-            let items = items?;
-            Ok(Closed(ExpressionTree::Sum(items)))
+            if unbound.is_empty() {
+                Ok(Closed(ExpressionTree::Sum(items)))
+            } else {
+                Err(unbound)
+            }
         }
         ExpressionTree::Floor(a, b) => {
-            let a = closed_under(bindings, a.inner())?;
-            let b = closed_under(bindings, b.inner())?;
+            let (a, b) = combine_close_results(
+                closed_under(bindings, a.inner()),
+                closed_under(bindings, b.inner()),
+            )?;
             Ok(Closed(ExpressionTree::Floor(Box::new(a), Box::new(b))))
         }
         ExpressionTree::Comparison { a, b, op } => {
-            let a = closed_under(bindings, a.inner())?;
-            let b = closed_under(bindings, b.inner())?;
+            let (a, b) = combine_close_results(
+                closed_under(bindings, a.inner()),
+                closed_under(bindings, b.inner()),
+            )?;
             Ok(Closed(ExpressionTree::Comparison {
                 a: Box::new(a),
                 b: Box::new(b),
@@ -124,6 +158,7 @@ fn closed_under(
                 },
                 tail.inner(),
             )?;
+
             Ok(Closed(ExpressionTree::Binding {
                 symbol: symbol.clone(),
                 value: Box::new(value),
@@ -172,6 +207,81 @@ mod tests {
     use super::*;
     use crate::parse::RawExpression;
     use crate::properties;
+    use crate::symbolic::{Constant, Die};
+
+    #[test]
+    fn open_symbols() {
+        const CASES: &[(&str, &[&str])] = &[
+            ("ATK", &["ATK"]),
+            ("2(ATK+CHA)", &["ATK", "CHA"]),
+            ("[AC: 10] [ATK: 1d20] (ATK + CHA) > AC", &["CHA"]),
+        ];
+        for (expr, symbols) in CASES {
+            let raw: RawExpression = expr.parse().unwrap();
+            let symbols: HashSet<Symbol> = symbols.iter().map(|v| v.parse().unwrap()).collect();
+            let unclosed: Result<Closed, _> = raw.try_into();
+            let Err(Error::UnboundSymbols(unbound)) = unclosed else {
+                panic!("got closed expression")
+            };
+            assert_eq!(symbols, unbound, "case: {expr}");
+        }
+    }
+
+    #[test]
+    fn closed_symbols() {
+        const CASES: &[&str] = &["[AC: 10] 2([ATK: 1d20] (ATK + 3) > AC)"];
+        for expr in CASES {
+            let raw: RawExpression = expr.parse().unwrap();
+            let closed: Closed = raw.clone().try_into().unwrap();
+            assert_eq!(closed.to_string(), raw.to_string());
+        }
+    }
+
+    /// Search for an expression that matches the predicate
+    fn search_for<'a, T, F>(
+        tree: &'a ExpressionTree<T>,
+        predicate: &mut F,
+    ) -> Option<&'a ExpressionTree<T>>
+    where
+        F: FnMut(&ExpressionTree<T>) -> bool,
+        T: ExpressionWrapper,
+    {
+        if predicate(tree) {
+            return Some(tree);
+        }
+        match tree {
+            ExpressionTree::Negated(e) => search_for(e.inner(), predicate),
+            ExpressionTree::Repeated {
+                count,
+                value,
+                ranker: _,
+            } => search_for(count.inner(), predicate).or(search_for(value.inner(), predicate)),
+            ExpressionTree::Product(a, b) => {
+                search_for(a.inner(), predicate).or(search_for(b.inner(), predicate))
+            }
+            ExpressionTree::Floor(a, b) => {
+                search_for(a.inner(), predicate).or(search_for(b.inner(), predicate))
+            }
+            ExpressionTree::Comparison { a, b, op: _ } => {
+                search_for(a.inner(), predicate).or(search_for(b.inner(), predicate))
+            }
+            ExpressionTree::Sum(items) => {
+                for item in items {
+                    if let Some(v) = search_for(item.inner(), predicate) {
+                        return Some(v);
+                    }
+                }
+                None
+            }
+            ExpressionTree::Binding {
+                symbol,
+                value,
+                tail,
+            } => search_for(value.inner(), predicate).or(search_for(tail.inner(), predicate)),
+
+            _ => None,
+        }
+    }
 
     // TODO: These don't work correctly;
     // And they don't shrink well, which hurts too.
@@ -191,22 +301,23 @@ mod tests {
         symbols: HashSet<Symbol>,
     ) -> impl Strategy<Value = (RawExpression, HashSet<Symbol>)> {
         let symbols_final = symbols.clone();
-        let leaf = Union::new([
+
+        let static_leaf = Union::new([
             any::<Die>().prop_map(ExpressionTree::Die).boxed(),
             any::<Constant>().prop_map(ExpressionTree::Modifier).boxed(),
         ]);
 
+        // If any symbols are available, only use those symbols.
+        // This guarantees that symbols show up when in use.
         let leaf = if symbols.is_empty() {
-            leaf
+            static_leaf.boxed()
         } else {
-            let symbol = (0..symbols.len())
+            (0..symbols.len())
                 .prop_map(move |v| {
                     let s = symbols.iter().nth(v).unwrap();
                     ExpressionTree::Symbol(s.clone())
                 })
-                .boxed();
-
-            leaf.or(symbol)
+                .boxed()
         };
 
         let leaf = leaf.prop_map(RawExpression::from);
@@ -227,17 +338,21 @@ mod tests {
     proptest! {
         #[test]
         fn identify_open_symbols(
-            (symbols, (exp, _)) in
+            (_symbols, (exp, _)) in
             proptest::collection::hash_set(properties::symbol(), 1..4)
             .prop_flat_map(|symbols| (Just(symbols.clone()), expression_closed_under(symbols)))
         ) {
-            // TODO: This assumes the symbols are used... which they need not be.
             let result : Result<Closed, _> = exp.clone().try_into();
-            let Err(Error::UnboundSymbols(got)) = result else {
-                return Err(TestCaseError::fail(format!("expression: {exp}")));
-            };
-            assert_eq!(got, symbols);
+
+            if let Err(Error::UnboundSymbols(got)) = result {
+                for symbol in got {
+                    // The symbol is used:
+                    assert!(search_for(exp.inner(), &mut |s| matches!(s, ExpressionTree::Symbol(sym) if sym == &symbol)).is_some());
+                }
+            }
         }
+        // The generator doesn't introduce any bindings, so we don't need to test the binding
+        // hierarchy here.
     }
 
     /// Generate an Expression with valid bindings.
@@ -269,136 +384,78 @@ mod tests {
         syms.prop_map(|(tree, _syms)| tree)
     }
 
+    /// Matches a tree where the symbol is unbound.
+    fn unbound_tree<'a, W>(
+        symbol: &Symbol,
+        tree: &'a ExpressionTree<W>,
+    ) -> Option<&'a ExpressionTree<W>>
+    where
+        W: ExpressionWrapper,
+    {
+        match tree {
+            ExpressionTree::Binding {
+                symbol: sym,
+                value,
+                tail,
+            } => {
+                // Symbol is unbound in the "value" statement
+                let value = unbound_tree(symbol, value.inner());
+                if sym == symbol {
+                    // Symbol is bound in the tail, we don't need to inspect it.
+                    value
+                } else {
+                    // Symbol is also unbound in the tail, look there.
+                    value.or_else(|| unbound_tree(symbol, tail.inner()))
+                }
+            }
+            ExpressionTree::Modifier(_) => None,
+            ExpressionTree::Die(_) => None,
+            ExpressionTree::Symbol(sym) if sym == symbol => Some(tree),
+            ExpressionTree::Symbol(_) => None,
+            ExpressionTree::Negated(e) => unbound_tree(symbol, e.inner()),
+            ExpressionTree::Repeated {
+                count,
+                value,
+                ranker: _,
+            } => {
+                unbound_tree(symbol, count.inner()).or_else(|| unbound_tree(symbol, value.inner()))
+            }
+            ExpressionTree::Product(a, b) => {
+                unbound_tree(symbol, a.inner()).or_else(|| unbound_tree(symbol, b.inner()))
+            }
+            ExpressionTree::Floor(a, b) => {
+                unbound_tree(symbol, a.inner()).or_else(|| unbound_tree(symbol, b.inner()))
+            }
+            ExpressionTree::Comparison { a, b, op: _ } => {
+                unbound_tree(symbol, a.inner()).or_else(|| unbound_tree(symbol, b.inner()))
+            }
+            ExpressionTree::Sum(items) => items
+                .iter()
+                .filter_map(|v| unbound_tree(symbol, v.inner()))
+                .next(),
+        }
+    }
+
     proptest! {
+        // TODO: This tests that all _detected_ unbound variables are in fact unbound.
+        // It doesn't check that all unbound variables are detected.
         #[test]
         fn generate_valid_bindings(exp in closed_expression()) {
             let exp = exp.simplify();
-            let s = exp.to_string();
-            let _ : Closed = exp.try_into().map_err(|e| {
-                TestCaseError::fail(format!("expression: {s}\n{e}"))
-            })?;
+            let result : Result<Closed, _> = exp.clone().try_into();
+            if let Err(Error::UnboundSymbols(got)) = result {
+                for symbol in got {
+                    // The symbol is used:
+                    assert!(search_for(exp.inner(), &mut |s| matches!(s, ExpressionTree::Symbol(sym) if sym == &symbol)).is_some());
+
+                    // And there is some sub tree where:
+                    // - There is no binding for the symbol, and
+                    // - The symbol is used
+                    assert!(unbound_tree(&symbol, exp.inner()).is_some());
+                }
+            }
+
+
         }
     }
 }
-
-//#[cfg(test)]
-//mod tests {
-//    use super::*;
-//
-//    #[test]
-//    fn undefined_reference() {
-//        let v: RawExpression = "[ABC: 1d20] BCD".parse().unwrap();
-//        let e = std::convert::TryInto::<WellFormed>::try_into(v).unwrap_err();
-//        let e_target: Symbol = "BCD".parse().unwrap();
-//        match e {
-//            crate::Error::SymbolUndefined(sym) if sym == e_target => (),
-//            x => panic!("unexpected error: {x}"),
-//        }
-//    }
-//
-//    #[test]
-//    fn redefined_reference() {
-//        let v: RawExpression = "[ABC: 1d20] [ABC:2d10] ABC + ABC".parse().unwrap();
-//        let e = std::convert::TryInto::<WellFormed>::try_into(v).unwrap_err();
-//        let e_target = "ABC".parse().unwrap();
-//        assert!(matches!(e, crate::Error::SymbolRedefined(sym) if sym == e_target));
-//    }
-//
-//    #[test]
-//    fn undefined_contextural() {
-//        let v: RawExpression = "2([ATK: 1d20] (ATK + 1 > 10) * 10) + ATK".parse().unwrap();
-//        let e = std::convert::TryInto::<WellFormed>::try_into(v).unwrap_err();
-//        let e_target = "ATK".parse().unwrap();
-//        assert!(matches!(e, crate::Error::SymbolUndefined(sym) if sym == e_target));
-//    }
-//
-//    #[test]
-//    fn keep_enough_high() {
-//        let v: RawExpression = "3d20kh4".parse().unwrap();
-//        let e = std::convert::TryInto::<WellFormed>::try_into(v).unwrap_err();
-//        assert!(matches!(e, crate::Error::KeepTooFew(_, _)));
-//    }
-//
-//    #[test]
-//    fn keep_enough_low() {
-//        let v: RawExpression = "3d20kl4".parse().unwrap();
-//        let e = std::convert::TryInto::<WellFormed>::try_into(v).unwrap_err();
-//        assert!(matches!(e, crate::Error::KeepTooFew(_, _)));
-//    }
-//
-//    #[test]
-//    fn no_zero_in_denominator_range() {
-//        let v: RawExpression = "10 / (1d20 - 10)".parse().unwrap();
-//        let e = std::convert::TryInto::<WellFormed>::try_into(v).unwrap_err();
-//        assert!(matches!(e, crate::Error::DivideByZero(_)));
-//    }
-//
-//    #[test]
-//    fn no_zero_faced_dice() {
-//        let v: RawExpression = "d0".parse().unwrap();
-//        let e = std::convert::TryInto::<WellFormed>::try_into(v).unwrap_err();
-//        assert!(matches!(e, crate::Error::ZeroFacedDie()));
-//    }
-//
-//    #[test]
-//    fn minimum() {
-//        for (i, (e, min)) in [
-//            ("20 / 2", 10),
-//            ("1d20 / 1d10", 0),
-//            ("-1d20", -20),
-//            ("1d20", 1),
-//            ("-1d20 / 1d20", -20),
-//            ("1d20 / -1d20", -20),
-//            ("[ATK: 1d20] ATK+3", 4),
-//            ("1d2 * 1d2", 1),
-//            ("1d2 < 2", 0),
-//            ("[ATK: 1d20] -ATK", -20),
-//            ("[ATK: -1d20] -ATK", 1),
-//            ("2d10", 2),
-//        ]
-//        .into_iter()
-//        .enumerate()
-//        {
-//            let e: WellFormed = e.parse().unwrap();
-//            assert_eq!(e.minimum(), min, "case {i} for expression {e}");
-//        }
-//    }
-//    #[test]
-//    fn maximum() {
-//        for (i, (e, max)) in [
-//            ("20 / 2", 10),
-//            ("1d20 / 1d10", 20),
-//            ("-1d20", -1),
-//            ("1d20", 20),
-//            ("-1d20 / 1d20", 0),
-//            ("1d20 / -1d20", 0),
-//            ("[ATK: 1d20] ATK+3", 23),
-//            ("1d2 * 1d2", 4),
-//            ("1d2 > 1", 1),
-//            ("[ATK: 1d20] -ATK", -1),
-//            ("[ATK: -1d20] -ATK", 20),
-//            ("2d10", 20),
-//        ]
-//        .into_iter()
-//        .enumerate()
-//        {
-//            let e: WellFormed = e.parse().unwrap();
-//            assert_eq!(e.maximum(), max, "case {i} for expression {e}");
-//        }
-//    }
-//
-//    #[test]
-//    #[ignore = "TODO: Incorrect; breaks linearity assumption"]
-//    fn attack_rolls() {
-//        // Complicated ones: Eldritch Blast, with Agonizing Blast, including critical effects.
-//        for (i, (e, max)) in [
-//            ("[AC: 16] [CHA: +5] [ATK: 1d20] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA)", 25),
-//            ("2([AC: 16] [ATK: 1d20] [CHA: +5] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA))", 50),
-//            ("[AC: 16] [CHA: +5] 2([ATK: 1d20] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA))", 50),
-//        ].into_iter().enumerate() {
-//            let e : WellFormed = e.parse().unwrap();
-//            assert_eq!(e.minimum(), 0); // critical miss
-//            assert_eq!(e.maximum(), max); // critical miss
-//        }
-//    }
-//}
