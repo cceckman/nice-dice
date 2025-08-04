@@ -5,17 +5,13 @@
 
 use std::io::{Read, Write};
 
-use dicer::Closed;
-
 fn main() {
     let mut input = String::new();
     std::io::stdin()
         .lock()
         .read_to_string(&mut input)
         .expect("failed to read input from stdin");
-    let expr: Closed = input.parse().expect("invalid expression");
-    let distr = expr.distribution().expect("incomputable distribution");
-    let figure = dicer::html::figure(&expr, &distr);
+    let figure = dicer::distribution_table_inner(input).unwrap();
 
     let mut stdout = std::io::stdout().lock();
     write!(stdout, "{}", figure.into_string()).unwrap();

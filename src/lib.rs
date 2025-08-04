@@ -58,7 +58,9 @@ fn list_symbols(s: &HashSet<Symbol>) -> String {
     strs.join(", ")
 }
 
-/// Get the distribution of the expression as an HTML table.
+/// Present the comma-separated expressions as a table, formatted as a column chart by Charts.css.
+///
+/// Returns a string of HTML indicating. On error, returns HTML indicating the error.
 #[wasm_bindgen]
 pub fn distribution_table(input: String) -> String {
     match distribution_table_inner(input) {
@@ -70,8 +72,19 @@ pub fn distribution_table(input: String) -> String {
     .into()
 }
 
-fn distribution_table_inner(input: String) -> Result<PreEscaped<String>, Error> {
-    let expr: Closed = input.parse()?;
-    let distr = expr.distribution()?;
-    Ok(html::figure(&expr, &distr))
+/// Present the comma-separated expressions as a table, formatted as a column chart by Charts.css.
+///
+/// On success, returns a string of HTML indicating.
+pub fn distribution_table_inner(input: String) -> Result<PreEscaped<String>, Error> {
+    let items = input.split(",");
+    let res: Result<Vec<_>, _> = items
+        .map(|v| {
+            let expr: Closed = v.parse()?;
+            let distr = expr.distribution()?;
+            Ok((expr.to_string(), distr))
+        })
+        .collect();
+    let res = res?;
+
+    Ok(html::table_multi_dist(&res))
 }
