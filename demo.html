@@ -83,10 +83,12 @@ table.examples { border: 1px solid black; }
                 <td class="example">(1d20) { &ge; 17: 1d4 }</td>
                 <td>Roll a 20-sided die. If the result is greater than or equal to 17, roll 1d4 and use its value; otherwise, use the value 0.</td>
             </tr>
+            <!-- TODO: This doesn't work! May be a u32 overflow? 
             <tr>
-                <td class="example">[ATK: 1d20] (ATK &ge; 17) * ( 8d6 / 2 ) + (ATK &lt; 17) ( 8d6 )</td>
+                <td class="example">[SAVE: 1d20] (SAVE &ge; 17) * ( 8d6 / 2 ) + (SAVE &lt; 17) * ( 8d6 )</td>
                 <td>Roll a 20-sided die. If the result is greater than or equal to 17, roll (8) 6-sided dice, sum them, and divide the result by two (rounding down); otherwise, roll (8) 6-sided dice and sum them. (Fireball, save for half damage.)</td>
             </tr>
+-->
             <tr>
                 <td class="example">[AC: 16] [CHA: +5] [ATK: 1d20] (ATK = 20) * (2d10 + CHA) + (ATK &lt; 20) * (ATK &gt; 1) * (ATK + CHA &ge; AC) * (1d10 + CHA)</td>
                 <td>The target AC is 16 and your Charisma modifier is 5. Roll a 20-sided die; this is your attack roll. If the attack roll is exactly than 20, roll two 10-sided dice and sum them along with your Charisma modifier. If the attack roll is 1, use the value 0. If the attack roll plus your charisma modifier is greater than the target AC, roll a 10-sided die and add your charisma modifier to the result. (A warlock attacks with Eldritch Blast, with the Agonizing Blast feature.)</td>
