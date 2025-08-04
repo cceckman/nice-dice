@@ -33,7 +33,7 @@ pub fn table_multi_dist(inputs: &[&str], distrs: &[&Distribution]) -> maud::PreE
                 value,
                 distrs
                     .iter()
-                    .map(|distr| distr.probability_f64(value))
+                    .map(|distr| distr.probability_f64(value) * 100.0)
                     .collect(),
             )
         })
@@ -54,7 +54,7 @@ pub fn table_multi_dist(inputs: &[&str], distrs: &[&Distribution]) -> maud::PreE
                     th scope="row" { (value) }
                     @for freq in row {
                         @let size = freq / max;
-                        td style=(format!("--size: {}", size)) { span class="data" { (format!("{freq:.2}")) }}
+                        td style=(format!("--size: {}", size)) { span class="data" { (format!("{freq:.1}%")) }}
                     }
                 }
             }
