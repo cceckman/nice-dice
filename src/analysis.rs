@@ -15,7 +15,7 @@ use std::{collections::HashSet, fmt::Display};
 use crate::{
     Error,
     parse::RawExpression,
-    symbolic::{ExpressionTree, ExpressionWrapper, Symbol},
+    symbolic::{Constant, ExpressionTree, ExpressionWrapper, Symbol},
 };
 
 impl TryFrom<RawExpression> for Closed {
@@ -27,10 +27,19 @@ impl TryFrom<RawExpression> for Closed {
     }
 }
 
+impl std::str::FromStr for Closed {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let raw: RawExpression = s.parse()?;
+        raw.try_into()
+    }
+}
+
 /// An expression which is closed: no unbound symbols from its environment.
 //
 // Note that this really only applies at the top level: the sub-tree can't safely be extracted.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Closed(ExpressionTree<Closed>);
 
 impl ExpressionWrapper for Closed {
@@ -42,6 +51,83 @@ impl ExpressionWrapper for Closed {
 impl Display for Closed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl Closed {
+    /// Return a copy of the expression tree where the given expression is replaced with the
+    /// provided constant.
+    ///
+    /// Note that any Closed expression can be given a substitution with a fixed value and remained
+    /// Closed, as the substitution results in strictly fewer unbound variables.
+    pub(crate) fn substitute(&self, sym: &Symbol, value: isize) -> Closed {
+        let expr = if value < 0 {
+            ExpressionTree::Negated(Box::new(Closed(ExpressionTree::Modifier(Constant(
+                value.unsigned_abs(),
+            )))))
+        } else {
+            ExpressionTree::Modifier(Constant(value.unsigned_abs()))
+        };
+        self.substitute_inner(sym, &Closed(expr))
+    }
+
+    fn substitute_inner(&self, sym: &Symbol, expr: &Closed) -> Closed {
+        match self.inner() {
+            ExpressionTree::Symbol(symbol) if symbol == sym => expr.clone(),
+            ExpressionTree::Modifier(_) | ExpressionTree::Die(_) | ExpressionTree::Symbol(_) => {
+                self.clone()
+            }
+            ExpressionTree::Negated(e) => Closed(ExpressionTree::Negated(Box::new(
+                e.substitute_inner(sym, expr),
+            ))),
+            ExpressionTree::Repeated {
+                count,
+                value,
+                ranker,
+            } => {
+                let count = Box::new(count.substitute_inner(sym, expr));
+                let value = Box::new(value.substitute_inner(sym, expr));
+                Closed(ExpressionTree::Repeated {
+                    count,
+                    value,
+                    ranker: *ranker,
+                })
+            }
+            ExpressionTree::Product(a, b) => {
+                let a = Box::new(a.substitute_inner(sym, expr));
+                let b = Box::new(b.substitute_inner(sym, expr));
+                Closed(ExpressionTree::Product(a, b))
+            }
+            ExpressionTree::Floor(a, b) => {
+                let a = Box::new(a.substitute_inner(sym, expr));
+                let b = Box::new(b.substitute_inner(sym, expr));
+                Closed(ExpressionTree::Floor(a, b))
+            }
+            ExpressionTree::Comparison { a, b, op } => {
+                let a = Box::new(a.substitute_inner(sym, expr));
+                let b = Box::new(b.substitute_inner(sym, expr));
+                Closed(ExpressionTree::Comparison { a, b, op: *op })
+            }
+            ExpressionTree::Sum(items) => Closed(ExpressionTree::Sum(
+                items
+                    .iter()
+                    .map(|v| v.substitute_inner(sym, expr))
+                    .collect(),
+            )),
+            ExpressionTree::Binding {
+                symbol,
+                value,
+                tail,
+            } => {
+                let value = Box::new(value.substitute_inner(sym, expr));
+                let tail = Box::new(tail.substitute_inner(sym, expr));
+                Closed(ExpressionTree::Binding {
+                    symbol: symbol.clone(),
+                    value,
+                    tail,
+                })
+            }
+        }
     }
 }
 

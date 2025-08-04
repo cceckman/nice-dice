@@ -125,6 +125,18 @@ impl std::fmt::Display for ComparisonOp {
     }
 }
 
+impl ComparisonOp {
+    pub fn compare(&self, a: isize, b: isize) -> bool {
+        match self {
+            ComparisonOp::Gt => a > b,
+            ComparisonOp::Ge => a >= b,
+            ComparisonOp::Eq => a == b,
+            ComparisonOp::Le => a <= b,
+            ComparisonOp::Lt => a < b,
+        }
+    }
+}
+
 /// The ExpressionTree construct wraps all expressions in a tag type implementing this trait.
 pub trait ExpressionWrapper: Sized {
     fn inner(&self) -> &ExpressionTree<Self>;

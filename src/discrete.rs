@@ -1,19 +1,17 @@
 //! Probability computation via discrete (integral) math and combinatorics.
 
-use std::ops::Neg;
+use crate::{
+    Error,
+    analysis::Closed,
+    symbolic::{ComparisonOp, Constant, Die, ExpressionTree, ExpressionWrapper, Ranker, Symbol},
+};
+use std::{collections::HashMap, ops::Neg};
 
 use itertools::Itertools;
 use num::{ToPrimitive, rational::Ratio};
 
-use crate::{Branch, ComparisonOp, Error, Ranker, parse::Expression};
-
 /// A computed distribution for a bounded dice expression.
 /// ("bounded": does not support exploding dice.)
-///
-/// The default distribution has probability 1 of producing the value 0.
-///
-/// Addition of distributions represents the distribution that would result from summing the
-/// underlying events. Negation of a distribution
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Distribution {
     /// We track probabilities of each value using integers;
@@ -23,10 +21,195 @@ pub struct Distribution {
     offset: isize,
 }
 
+/// An evaluator: evaluates distributions for a closed expression.
+///
+/// Evaluators provide memoization for sub-expressions.
+/// It may be useful to re-use an Evaluator when experimenting with new expressions,
+/// trading (some) memory for (some) processing.
+///
+// TODO: Benchmark with and without memoization.
+#[derive(Default)]
+struct Evaluator {
+    /// Memoization table.
+    memo: HashMap<Closed, Distribution>,
+    use_memo: bool,
+}
+
+impl Evaluator {
+    fn eval(&mut self, tree: &Closed) -> Result<Distribution, Error> {
+        if self.use_memo {
+            if let Some(dist) = self.memo.get(tree) {
+                return Ok(dist.clone());
+            }
+        }
+        // We begin with native-stack recursion.
+
+        // Need to evaluate.
+        let memo = match tree.inner() {
+            ExpressionTree::Modifier(Constant(constant)) => Distribution::constant(*constant),
+            ExpressionTree::Die(Die(die)) => Distribution::die(*die),
+            ExpressionTree::Symbol(symbol) => {
+                panic!("unbound symbol {symbol} in closed expression")
+                // return Err(Error::UnboundSymbols([symbol].into()))
+            }
+            ExpressionTree::Negated(e) => {
+                let dist = self.eval(e.as_ref())?;
+                -dist
+            }
+            ExpressionTree::Repeated {
+                count,
+                value,
+                ranker,
+            } => self.repeat(tree, count, value, ranker)?,
+            ExpressionTree::Product(a, b) => self.product(a, b)?,
+            ExpressionTree::Floor(a, b) => self.floor(tree, a, b)?,
+            ExpressionTree::Sum(items) => {
+                let distrs: Result<Vec<_>, _> = items.iter().map(|e| self.eval(e)).collect();
+                let distrs = distrs?;
+                distrs.into_iter().sum()
+            }
+            ExpressionTree::Comparison { a, b, op } => self.comparison(a, b, *op)?,
+            ExpressionTree::Binding {
+                symbol,
+                value,
+                tail,
+            } => self.binding(symbol, value, tail)?,
+        };
+        if self.use_memo {
+            self.memo.insert(tree.clone(), memo.clone());
+        }
+        Ok(memo)
+    }
+
+    fn product(&mut self, a: &Closed, b: &Closed) -> Result<Distribution, Error> {
+        let a = self.eval(a)?;
+        let b = self.eval(b)?;
+
+        let mut d = Distribution::empty();
+
+        for ((v1, f1), (v2, f2)) in a.occurrences().cartesian_product(b.occurrences()) {
+            d.add_occurrences(v1 * v2, f1 * f2);
+        }
+        Ok(d)
+    }
+
+    fn floor(&mut self, e: &Closed, a: &Closed, b: &Closed) -> Result<Distribution, Error> {
+        let a = self.eval(a)?;
+        let b = self.eval(b)?;
+
+        if *b.probability(0).numer() != 0 {
+            return Err(Error::DivideByZero(e.to_string()));
+        }
+
+        let mut d = Distribution::empty();
+        for ((v1, f1), (v2, f2)) in a.occurrences().cartesian_product(b.occurrences()) {
+            d.add_occurrences(v1 / v2, f1 * f2);
+        }
+        Ok(d)
+    }
+
+    fn repeat(
+        &mut self,
+        expression: &Closed,
+        count: &Closed,
+        value: &Closed,
+        ranker: &Ranker,
+    ) -> Result<Distribution, Error> {
+        let count_dist = self.eval(count)?;
+        let value_dist = self.eval(value)?;
+
+        let mut result = Distribution::empty();
+        if count_dist.min() < 0 {
+            return Err(Error::NegativeCount(expression.to_string()));
+        }
+        if (count_dist.min() as usize) < ranker.min_count() {
+            return Err(Error::KeepTooFew(
+                ranker.min_count(),
+                expression.to_string(),
+            ));
+        }
+
+        // We have to have the same type signature for each of these,
+        // and we want to truncate in the other cases.
+        #[allow(clippy::ptr_arg)]
+        fn keep_all(v: &mut [isize], _n: usize) -> &[isize] {
+            v
+        }
+        fn keep_highest(v: &mut [isize], n: usize) -> &[isize] {
+            v.sort_by(|v1, v2| v2.cmp(v1));
+            &v[..n]
+        }
+        fn keep_lowest(v: &mut [isize], n: usize) -> &[isize] {
+            v.sort();
+            &v[..n]
+        }
+        let filter = match ranker {
+            Ranker::All => keep_all,
+            Ranker::Highest(_) => keep_highest,
+            Ranker::Lowest(_) => keep_lowest,
+        };
+
+        for (count, count_frequency) in count_dist.occurrences() {
+            let keep_count = ranker.keep(count) as usize;
+            // Assuming this count happens this often...
+            let dice = std::iter::repeat(&value_dist)
+                .map(|d| d.occurrences())
+                .take(count as usize);
+            for value_set in dice.multi_cartesian_product() {
+                let (mut values, frequencies): (Vec<isize>, Vec<usize>) =
+                    value_set.into_iter().unzip();
+                // We have to compute the overall frquency including the dice we dropped;
+                // in other universes (other combinations), we'd keep them.
+                let occurrences = frequencies.into_iter().product::<usize>() * count_frequency;
+                let value = filter(&mut values, keep_count).iter().sum();
+                result.add_occurrences(value, occurrences);
+            }
+        }
+        Ok(result)
+    }
+
+    fn comparison(
+        &mut self,
+        a: &Closed,
+        b: &Closed,
+        op: ComparisonOp,
+    ) -> Result<Distribution, Error> {
+        let a = self.eval(a)?;
+        let b = self.eval(b)?;
+
+        let mut dist = Distribution::empty();
+
+        for ((v1, o1), (v2, o2)) in a.occurrences().cartesian_product(b.occurrences()) {
+            let occurrences = o1 * o2;
+            let value = op.compare(v1, v2) as isize;
+            dist.add_occurrences(value, occurrences);
+        }
+        Ok(dist)
+    }
+
+    fn binding(
+        &mut self,
+        symbol: &Symbol,
+        value: &Closed,
+        tail: &Closed,
+    ) -> Result<Distribution, Error> {
+        let value = self.eval(value)?;
+        let mut acc = Distribution::empty();
+        for (value, occ) in value.occurrences() {
+            let tree: Closed = tail.substitute(symbol, value);
+            let table = self.eval(&tree)?;
+            for (v2, o2) in table.occurrences() {
+                acc.add_occurrences(v2, occ * o2);
+            }
+        }
+        Ok(acc)
+    }
+}
+
 impl Distribution {
     /// Generate a uniform distribution on the closed interval `[1, size]`;
     /// i.e. the distribution for rolling a die with the given number of faces.
-    pub fn die(size: usize) -> Distribution {
+    fn die(size: usize) -> Distribution {
         let mut v = Vec::new();
         v.resize(size, 1);
         Distribution {
@@ -36,10 +219,10 @@ impl Distribution {
     }
 
     /// Generate a "modifier" distribution, which has probability 1 of producing the given value.
-    pub fn modifier(value: isize) -> Distribution {
+    fn constant(value: usize) -> Distribution {
         Distribution {
             occurrence_by_value: vec![1],
-            offset: value,
+            offset: value as isize,
         }
     }
 
@@ -93,7 +276,7 @@ impl Distribution {
     }
 
     /// Clean up the distribution by removing extraneous zero-valued entries.
-    pub fn clean(&mut self) {
+    fn clean(&mut self) {
         let leading_zeros = self
             .occurrence_by_value
             .iter()
@@ -180,20 +363,18 @@ impl std::ops::Add<&Distribution> for &Distribution {
 
         let mut result = Distribution::empty();
 
-        for (aval, aocc) in a.occurrences() {
-            for (bval, bocc) in b.occurrences() {
-                let val = aval + bval;
-                // aocc and bocc each represent the numerator of a fraction, aocc/atotal and
-                // bocc/btotal. That fraction is the probability that the given value will turn up
-                // on a roll.
-                //
-                // The events are independent, so we can combine the probabilities by summing them.
-                let occ = aocc * bocc;
-                // This represents _only one way_ to get this value: this roll from A, this roll
-                // from B.
-                // Accumulate from different rolls:
-                result.add_occurrences(val, occ);
-            }
+        for ((v1, o1), (v2, o2)) in a.occurrences().cartesian_product(b.occurrences()) {
+            let val = v1 + v2;
+            // aocc and bocc each represent the numerator of a fraction, aocc/atotal and
+            // bocc/btotal. That fraction is the probability that the given value will turn up
+            // on a roll.
+            //
+            // The events are independent, so we can combine the probabilities by summing them.
+            let occ = o1 * o2;
+            // This represents _only one way_ to get this value: this roll from A, this roll
+            // from B.
+            // Accumulate from different rolls:
+            result.add_occurrences(val, occ);
         }
 
         debug_assert_eq!(a.total() * b.total(), result.total(), "{result:?}");
@@ -235,222 +416,39 @@ impl Neg for Distribution {
 impl std::iter::Sum for Distribution {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.reduce(|a, b| a + b)
-            .unwrap_or_else(|| Distribution::modifier(0))
+            .unwrap_or_else(|| Distribution::constant(0))
     }
 }
 
-fn repeat(
-    expression: &Expression,
-    count: Distribution,
-    value: Distribution,
-    ranker: &Ranker,
-) -> Result<Distribution, Error> {
-    let mut result = Distribution::empty();
-    if count.min() < 0 {
-        return Err(Error::NegativeCount(expression.to_string()));
-    }
-    if (count.min() as usize) < ranker.count() {
-        return Err(Error::KeepTooFew(expression.to_string()));
-    }
-
-    // We have to have the same type signature for each of these,
-    // and we want to truncate in the other cases.
-    #[allow(clippy::ptr_arg)]
-    fn keep_all(v: &mut [isize], _n: usize) -> &[isize] {
-        v
-    }
-    fn keep_highest(v: &mut [isize], n: usize) -> &[isize] {
-        v.sort_by(|v1, v2| v2.cmp(v1));
-        &v[..n]
-    }
-    fn keep_lowest(v: &mut [isize], n: usize) -> &[isize] {
-        v.sort();
-        &v[..n]
-    }
-    let filter = match ranker {
-        Ranker::All => keep_all,
-        Ranker::Highest(_) => keep_highest,
-        Ranker::Lowest(_) => keep_lowest,
-    };
-    let keep_count = ranker.count();
-
-    for (count, count_frequency) in count.occurrences() {
-        // Assuming this count happens this often...
-        let dice = std::iter::repeat(&value)
-            .map(|d| d.occurrences())
-            .take(count as usize);
-        for value_set in dice.multi_cartesian_product() {
-            let (mut values, frequencies): (Vec<isize>, Vec<usize>) = value_set.into_iter().unzip();
-            // We have to compute the overall frquency including the dice we dropped;
-            // in other universes (other combinations), we'd keep them.
-            let occurrences = frequencies.into_iter().product::<usize>() * count_frequency;
-            let value = filter(&mut values, keep_count).iter().sum();
-            result.add_occurrences(value, occurrences);
-        }
-    }
-    Ok(result)
-}
-
-fn product(a: Distribution, b: Distribution) -> Distribution {
-    let mut d = Distribution::empty();
-
-    for ((v1, f1), (v2, f2)) in a.occurrences().cartesian_product(b.occurrences()) {
-        d.add_occurrences(v1 * v2, f1 * f2);
-    }
-    d
-}
-
-fn floor(e: &Expression, a: Distribution, b: Distribution) -> Result<Distribution, Error> {
-    if *b.probability(0).numer() != 0 {
-        return Err(Error::DivideByZero(e.to_string()));
-    }
-
-    let mut d = Distribution::empty();
-    for ((v1, f1), (v2, f2)) in a.occurrences().cartesian_product(b.occurrences()) {
-        d.add_occurrences(v1 / v2, f1 * f2);
-    }
-    Ok(d)
-}
-
-fn case(target: Distribution, branches: &[Branch]) -> Result<Distribution, Error> {
-    let branch_distributions: Result<Vec<_>, Error> = branches
-        .iter()
-        .map(
-            |Branch {
-                 op,
-                 threshold,
-                 value,
-             }|
-             -> Result<_, Error> {
-                let threshold = threshold.distribution()?;
-                let value = value.distribution()?;
-                Ok((*op, threshold, value))
-            },
-        )
-        .collect();
-    let branch_distributions = branch_distributions?;
-
-    // What possibilities are there within the branches?
-    // We can account for the total number without weighting them yet.
-    let branches_total: usize = branch_distributions
-        .iter()
-        .map(|(_, t, v)| t.total() * v.total())
-        .product::<usize>();
-
-    let mut result = Distribution::empty();
-    for (target, target_occ) in target.occurrences() {
-        // Weight the branch possibilities by how often we wind up with the value we're currently considering.
-        let mut branches_total: usize = branches_total * target_occ;
-
-        for (op, threshold_distr, value_distr) in &branch_distributions {
-            // How many times will we take _this_ branch?
-            let occurrences = op.compare(target, threshold_distr);
-            let branch_total = threshold_distr.total() * value_distr.total();
-            // We can count towards "this branch" all the possibilities in later branches,
-            // and the weights that got us _to_ this branch.
-            // But we need to weight only the times that we are _on_ this branch, like so:
-            branches_total /= branch_total;
-            for (v, vf) in value_distr.occurrences() {
-                result.add_occurrences(v, vf * occurrences * branches_total);
-            }
-
-            // Update the results for the next branch with how often we fall through:
-            let residual = (threshold_distr.total() - occurrences) * value_distr.total();
-            branches_total *= residual;
-        }
-
-        // If we have any probability of "falling off the end",
-        // contribute it towards a zero value.
-        // No conditional here; if branches_total is 0, then we add nothing to the distribution.
-        result.add_occurrences(0, branches_total);
-    }
-    Ok(result)
-}
-
-impl ComparisonOp {
-    /// Perform a comparison against the target distribution.
-    /// Returns the number of occurrences in "other" in which the comparison passes.
-    fn compare(&self, value: isize, other: &Distribution) -> usize {
-        let gt: usize = other
-            .occurrences()
-            .take_while(|(v2, _)| value > *v2)
-            .map(|(_, f2)| f2)
-            .sum();
-        let ratio = other.probability(value);
-        let eq = *ratio.numer();
-        let total = other.total();
-        let lt = total - (gt + eq);
-
-        match self {
-            ComparisonOp::Gt => gt,
-            ComparisonOp::Ge => gt + eq,
-            ComparisonOp::Eq => eq,
-            ComparisonOp::Le => lt + eq,
-            ComparisonOp::Lt => lt,
-            ComparisonOp::True => total,
-        }
-    }
-}
-
-impl Expression {
+impl Closed {
     /// Retrieve the distribution for the expression.
     pub fn distribution(&self) -> Result<Distribution, Error> {
-        self.distribution_internal().map(|mut v| {
-            v.clean();
-            v
-        })
-    }
-
-    fn distribution_internal(&self) -> Result<Distribution, Error> {
-        match self {
-            Expression::Modifier(m) => Ok(Distribution::modifier(*m as isize)),
-            Expression::Die(d) => Ok(Distribution::die(*d)),
-            Expression::Negated(expression) => Ok(-(expression.distribution_internal()?)),
-            Expression::Symbol(_) => todo!("symbol not implemented"),
-            Expression::Binding { .. } => todo!("bindings not implemented"),
-            Expression::Repeated {
-                count,
-                value,
-                ranker,
-            } => repeat(
-                self,
-                count.distribution_internal()?,
-                value.distribution_internal()?,
-                ranker,
-            ),
-            Expression::Product(a, b) => Ok(product(
-                a.distribution_internal()?,
-                b.distribution_internal()?,
-            )),
-            Expression::Floor(a, b) => {
-                floor(self, a.distribution_internal()?, b.distribution_internal()?)
-            }
-            Expression::Sum(expressions) => {
-                let terms: Result<Vec<_>, _> = expressions
-                    .iter()
-                    .map(|e| e.distribution_internal())
-                    .collect();
-                Ok(terms?.into_iter().sum())
-            }
-            Expression::Case { target, branches } => case(target.distribution()?, branches),
-        }
+        let mut eval = Evaluator::default();
+        eval.eval(self)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::parse::RawExpression;
+
     use super::*;
 
-    fn distribution_of(s: &str) -> Distribution {
-        s.parse::<Expression>()
-            .unwrap()
-            .distribution_internal()
-            .unwrap()
+    fn distribution_of(s: &str) -> Result<Distribution, Error> {
+        let raw = s.parse::<RawExpression>().unwrap();
+        let closed: Closed = raw.try_into().expect("failed closure");
+        closed.distribution()
+    }
+
+    #[test]
+    fn no_div_zero() {
+        let e = distribution_of("20 / (1d20 - 10)").unwrap_err();
+        assert!(matches!(e, Error::DivideByZero(_)));
     }
 
     #[test]
     fn d20() {
-        let d = distribution_of("d20");
+        let d = distribution_of("d20").unwrap();
 
         for i in 1..=20isize {
             assert_eq!(d.probability(i), Ratio::new(1, 20));
@@ -463,7 +461,7 @@ mod tests {
 
     #[test]
     fn d20_plus1() {
-        let d = distribution_of("d20 + 1");
+        let d = distribution_of("d20 + 1").unwrap();
 
         for i in 2..=21isize {
             assert_eq!(d.probability(i), Ratio::new(1, 20));
@@ -476,7 +474,7 @@ mod tests {
 
     #[test]
     fn two_d4() {
-        let d = distribution_of("2d4");
+        let d = distribution_of("2d4").unwrap();
 
         for (v, p) in [(2, 1), (3, 2), (4, 3), (5, 4), (6, 3), (7, 2), (8, 1)] {
             assert_eq!(d.probability(v), Ratio::new(p, 16));
@@ -485,9 +483,9 @@ mod tests {
 
     #[test]
     fn advantage_disadvantage() {
-        let a = distribution_of("2d20kh");
-        let b = distribution_of("1d20");
-        let c = distribution_of("2d20kl");
+        let a = distribution_of("2d20kh").unwrap();
+        let b = distribution_of("1d20").unwrap();
+        let c = distribution_of("2d20kl").unwrap();
 
         assert!(a.mean() > b.mean());
         assert!(b.mean() > c.mean());
@@ -495,7 +493,7 @@ mod tests {
 
     #[test]
     fn stat_roll() {
-        let stat = distribution_of("4d6kh3");
+        let stat = distribution_of("4d6kh3").unwrap();
         let diff = stat.mean() - 12.25;
 
         assert!(diff < 0.01, "{}", stat.mean());
@@ -504,8 +502,7 @@ mod tests {
     #[test]
     fn require_positive_roll_count() {
         for expr in ["(1d3-2)d4", "(-1)d10"] {
-            let expr: Expression = expr.parse().unwrap();
-            let e = expr.distribution_internal().unwrap_err();
+            let e = distribution_of(expr).unwrap_err();
             assert!(matches!(e, Error::NegativeCount(_)));
         }
     }
@@ -513,15 +510,14 @@ mod tests {
     #[test]
     fn require_dice_to_keep() {
         for expr in ["2d4kh3", "(1d4)(4)kl2"] {
-            let expr: Expression = expr.parse().unwrap();
-            let e = expr.distribution_internal().unwrap_err();
-            assert!(matches!(e, Error::KeepTooFew(_)));
+            let e = distribution_of(expr).unwrap_err();
+            assert!(matches!(e, Error::KeepTooFew(..)));
         }
     }
 
     #[test]
     fn negative_modifier() {
-        let d = distribution_of("1d4 + -1");
+        let d = distribution_of("1d4 + -1").unwrap();
         for i in 0..3isize {
             assert_eq!(d.probability(i), Ratio::new(1, 4));
         }
@@ -529,7 +525,7 @@ mod tests {
 
     #[test]
     fn negative_die() {
-        let d = -Distribution::die(4) + Distribution::modifier(1);
+        let d = -Distribution::die(4) + Distribution::constant(1);
         for i in -3..=0isize {
             assert_eq!(d.probability(i), Ratio::new(1, 4), "{d:?}");
         }
@@ -537,61 +533,60 @@ mod tests {
 
     #[test]
     fn product() {
-        let d = distribution_of("1d4 * 3");
+        let d = distribution_of("1d4 * 3").unwrap();
         let ps: Vec<_> = d.occurrences().collect();
         assert_eq!(&ps, &vec![(3, 1), (6, 1), (9, 1), (12, 1)])
     }
 
     #[test]
     fn never() {
-        let d = distribution_of("0d3");
-        let ps: Vec<_> = d.occurrences().collect();
-        assert_eq!(&ps, &vec![(0, 1)]);
+        distribution_of("0d3").unwrap_err();
     }
 
-    #[test]
-    fn compare_constant() {
-        let d = distribution_of("1d20");
-
-        {
-            // 10 > 1d20 : 9 times
-            let d = ComparisonOp::Gt.compare(10, &d);
-            assert_eq!(d, 9);
-        }
-        {
-            let d = ComparisonOp::Ge.compare(10, &d);
-            assert_eq!(d, 10);
-        }
-        {
-            let d = ComparisonOp::Eq.compare(20, &d);
-            assert_eq!(d, 1);
-        }
-        {
-            let d = ComparisonOp::Eq.compare(21, &d);
-            assert_eq!(d, 0);
-        }
-        {
-            // 0 <= 1d20 always
-            let d = ComparisonOp::Le.compare(00, &d);
-            assert_eq!(d, 20);
-        }
-        {
-            let d = ComparisonOp::Le.compare(18, &d);
-            assert_eq!(d, 3);
-        }
-        {
-            let d = ComparisonOp::Lt.compare(3, &d);
-            assert_eq!(d, 17);
-        }
-    }
+    //#[test]
+    //fn compare_constant() {
+    //    let d = distribution_of("1d20").unwrap();
+    //
+    //    {
+    //        // 10 > 1d20 : 9 times
+    //        let d = ComparisonOp::Gt.compare(10, &d);
+    //        assert_eq!(d, 9);
+    //    }
+    //    {
+    //        let d = ComparisonOp::Ge.compare(10, &d);
+    //        assert_eq!(d, 10);
+    //    }
+    //    {
+    //        let d = ComparisonOp::Eq.compare(20, &d);
+    //        assert_eq!(d, 1);
+    //    }
+    //    {
+    //        let d = ComparisonOp::Eq.compare(21, &d);
+    //        assert_eq!(d, 0);
+    //    }
+    //    {
+    //        // 0 <= 1d20 always
+    //        let d = ComparisonOp::Le.compare(00, &d);
+    //        assert_eq!(d, 20);
+    //    }
+    //    {
+    //        let d = ComparisonOp::Le.compare(18, &d);
+    //        assert_eq!(d, 3);
+    //    }
+    //    {
+    //        let d = ComparisonOp::Lt.compare(3, &d);
+    //        assert_eq!(d, 17);
+    //    }
+    //}
 
     #[test]
     fn critical_slap() {
         let d = distribution_of(
             r#"
-        (1d20) { = 20: 2 } { >= 12: 1 }
+        [ATK: 1d20] (ATK >= 12) * 1 + (ATK = 20) * 1
     "#,
-        );
+        )
+        .unwrap();
         let ps: Vec<_> = d.occurrences().collect();
         assert_eq!(&ps, &vec![(0, 11), (1, 8), (2, 1)])
     }
@@ -600,9 +595,10 @@ mod tests {
     fn critical_fail() {
         let d = distribution_of(
             r#"
-                (1d20) { = 20: 2 } { = 1: 0 } { 1 }
+        [ATK: 1d20] (ATK > 1) * (1 + (ATK = 20) * 1)
         "#,
-        );
+        )
+        .unwrap();
         let ps: Vec<_> = d.occurrences().collect();
         assert_eq!(&ps, &vec![(0, 1), (1, 18), (2, 1)])
     }
@@ -611,9 +607,10 @@ mod tests {
     fn even_contest() {
         let d = distribution_of(
             r#"
-                (1d20) { = 1d20: 2 }
+            (1d20 = 1d20) * 2
         "#,
-        );
+        )
+        .unwrap();
         let ps: Vec<_> = d.occurrences().collect();
         assert_eq!(&ps, &vec![(0, 380), (2, 20)])
     }
@@ -622,9 +619,10 @@ mod tests {
     fn break_even_contest() {
         let d = distribution_of(
             r#"
-                (1d20) { >= 1d20: 2 }
+            (1d20 >= 1d20) * 2
         "#,
-        );
+        )
+        .unwrap();
         let ps: Vec<_> = d.occurrences().collect();
         // >= is slightly biased towards the aggressor, "meets or exceeds"
         assert_eq!(&ps, &vec![(0, 190), (2, 210)])
@@ -632,7 +630,7 @@ mod tests {
 
     #[test]
     fn dagger() {
-        let d = distribution_of("(1d20) { > 10: 1d4 }");
+        let d = distribution_of("[ATK: 1d20] (ATK > 10) * 1d4").unwrap();
         let ps: Vec<_> = d.occurrences().collect();
         // In 10/20 cases, we pick the first branch.
         // In 10/20 cases, we pick the second branch.
@@ -643,7 +641,7 @@ mod tests {
 
     #[test]
     fn floor_div() {
-        let d = distribution_of("1d4 /_ 2");
+        let d = distribution_of("1d4 / 2").unwrap();
         let ps: Vec<_> = d.occurrences().collect();
         assert_eq!(&ps, &vec![(0, 1), (1, 2), (2, 1)])
     }

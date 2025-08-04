@@ -13,14 +13,11 @@
 
 use std::collections::HashSet;
 
-// use discrete::Distribution;
-use maud::PreEscaped;
 use peg::{error::ParseError, str::LineCol};
 use symbolic::Symbol;
-use wasm_bindgen::prelude::*;
 
-// pub mod discrete;
 mod analysis;
+mod discrete;
 mod parse;
 mod symbolic;
 
@@ -44,6 +41,9 @@ pub enum Error {
     #[error("d0 is not a valid die")]
     ZeroFacedDie(),
 }
+
+pub use analysis::Closed;
+pub use discrete::Distribution;
 
 fn list_symbols(s: &HashSet<Symbol>) -> String {
     let strs: Vec<_> = s.iter().map(|v| v.to_string()).collect();
