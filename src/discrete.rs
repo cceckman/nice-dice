@@ -29,15 +29,23 @@ pub struct Distribution {
 ///
 // TODO: Benchmark with and without memoization.
 #[derive(Default)]
-struct Evaluator {
+pub struct Evaluator {
     /// Memoization table.
     memo: HashMap<Closed, Distribution>,
-    use_memo: bool,
+    memoize: bool,
 }
 
 impl Evaluator {
-    fn eval(&mut self, tree: &Closed) -> Result<Distribution, Error> {
-        if self.use_memo {
+    /// Create a new Evaluator, with or without memoization enabled.
+    pub fn new(memoize: bool) -> Self {
+        Self {
+            memoize,
+            ..Default::default()
+        }
+    }
+
+    pub fn eval(&mut self, tree: &Closed) -> Result<Distribution, Error> {
+        if self.memoize {
             if let Some(dist) = self.memo.get(tree) {
                 return Ok(dist.clone());
             }
@@ -75,7 +83,7 @@ impl Evaluator {
                 tail,
             } => self.binding(symbol, value, tail)?,
         };
-        if self.use_memo {
+        if self.memoize {
             self.memo.insert(tree.clone(), memo.clone());
         }
         Ok(memo)

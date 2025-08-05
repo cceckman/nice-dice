@@ -1,0 +1,17 @@
+[package]
+name = "dicer-wasm"
+version = "0.1.0"
+edition = "2024"
+workspace = ".."
+
+[dependencies]
+dicer = { version = "0.1.0", path = ".." }
+wit-bindgen-rt = { version = "0.43.0", features = ["bitflags"] }
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "component:dicer-wasm"
+
+[package.metadata.component.dependencies]

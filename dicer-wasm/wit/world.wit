@@ -1,0 +1,43 @@
+package cceckman:dicer;
+
+interface dicer {
+    enum error-code {
+        parse,
+        negative-count,
+        keep-too-few,
+        divide-by-zero,
+        invalid-symbol,
+        unbound-symbols,
+        zero-faced-die,
+    }
+
+    record error {
+        code: error-code,
+        message: string,
+    }
+
+    /// A probability distribution of integer values.
+    resource distribution;
+
+    /// A parsed dice expression.
+    resource expression;
+    /// Attempt to parse the dice expression.
+    parse: func(text: string) -> result<expression, error>;
+
+    /// An Evaluator evaluates dice expressions.
+    /// It can perform caching of intermediate results, which can boost performance,
+    /// especially when experimenting with expressions.
+    resource evaluator {
+        constructor();
+
+        /// Evaluate the distributions of the provided exprssions,
+        /// and render them as a table.
+        render-distribution-table: func(exprs: list<borrow<expression>>) -> result<string, error>;
+    }
+}
+
+
+
+world dicer-wasm {
+    export dicer;
+}
