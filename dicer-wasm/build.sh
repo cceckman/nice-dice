@@ -2,5 +2,5 @@
 
 set -eux
 cargo component bindings
-cargo build --release
+cargo component build --release
 
