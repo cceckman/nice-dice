@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 itertools = "0.14.0"
 maud = "0.27.0"
-num = "0.4.3"
+num = { version = "0.4.3", default-features = false }
 peg = "0.8.5"
 thiserror = "2.0.12"
 
