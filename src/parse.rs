@@ -68,7 +68,7 @@ peg::parser! {
             // Note: order matters! Match the longer >= sequences first.
             = (">=" / "≥") { ComparisonOp::Ge }
             / ">" { ComparisonOp::Gt }
-            / "=" { ComparisonOp::Eq }
+            / ("=" / "==") { ComparisonOp::Eq }
             / ("<=" / "≤") { ComparisonOp::Le }
             / "<" { ComparisonOp::Lt }
 
