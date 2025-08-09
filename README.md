@@ -2,18 +2,40 @@
 
 dicer is a library for computing probability distributions from [dice notation].
 
-Specifically, it's designed distributions from [Dungeons and Dragons][D&D], 5th edition.
-The dice expressions should support all rolls that one can make during play
-(let [me] know about any gaps).
+Specifically, it's designed to handle distributions from [Dungeons and Dragons][D&D], 5th edition.
+The expression language should support all rolls that one can make during play,
+though let [me] know if you find any gaps.
 
-## Notation guide
+If you're a player looking for how to write dicer expressions, you want the [Notation guide] section.
+If you're a programmer looking to use dicer in your sofware, skip down to the [programming interface] section.
 
-dicer uses a [dice notation] that should be familiar to players of D&D.
 
-Each _dice expression_ generates a _probability distribution_ of
-integers. It's dicer's job to go from the expression to the distribution.
+# Notation guide
 
-Here's the expressions dicer understands. We'll start simply and work up.
+dicer uses a [dice notation] that should be familiar to players of D&D. The quick version:
+
+| Expression type | Examples | Notes |
+| --- | --- | --- |
+| Die | `d4` | Uniform discrete distribution |
+| Constant | `1`, `+1`, `-1` | Integers only |
+| Arithemtic | `(d5 + 3) / (2 * (3 - 4))` | No division by zero, division truncates fractions |
+| Repetition | `2d4`, `4(d4 + 1)` `(d3)(d4)` | Perform independent rolls, sum results; distinct from multiplication |
+| Repetition with selection | `2d20kl`, `4d6kh3` | Keep highest or keep lowest N |
+| Comparison | `d4 > 1`, `d20 = d10 + 10` | Results in 0 with "false" probability, 1 with "true" probability |
+| Binding and symbol | `[ROLL: 1d4] ROLL + ROLL` | Roll once, use the result multiple times (example is equivalent to `2 * d4`) |
+
+The damage done by two attacks-with-disadvantage, considering critical hit and critical miss.
+
+```ignore
+[MOD: +5] [PROFICIENCY: +3] [AC: 12]
+2 (
+     [ATK: 2d20kl] [DIE: 1d6] [CRIT: 1d6] 
+     (ATK = 20) * (DIE + CRIT + MOD) +
+     (ATK < 20) * (ATK > 1) (ATK + MOD + PROFICIENCY >= AC) * (DIE + MOD)
+)
+```
+
+In more detail...
 
 ## Die, constant, addition
 
@@ -125,7 +147,7 @@ If we ignore critical hits and misses, we can express the likely _damage_ as:
 
 If the attack misses, the comparison expression will have value `0`. If it hits, the whole expression will have the value of the `1d4 + 1` roll.
 
-## Bindings
+## Bindings and symbols
 
 Sometimes, the same value of a roll must be used multiple times in the same expression.
 In the above example, we ignored critical hits, because they require multiple comparisons against the attack roll (`d20`):
@@ -217,10 +239,53 @@ dicer ignores space, tabs, and newlines. That allows us to write a more complica
 )
 ```
 
+## Unsupported expressions
+
+dicer deals only with finite distributions, not exploding dice.
+(If you want explosions, try [AnyDice](https://anydice.com), which takes a different approach.)
+
+
 [with _eldritch blast_]: https://cceckman.com/writing/eldritch-blast/
 [critical hit]: https://www.dndbeyond.com/sources/dnd/basic-rules-2014/combat#CriticalHits
 [discrete uniform distribution]: https://en.wikipedia.org/wiki/Discrete_uniform_distribution
 [dice notation]: https://en.wikipedia.org/wiki/Dice_notation
 [D&D]: https://en.wikipedia.org/wiki/Dungeons_%26_Dragons
-[me]: https://cceckman.com
 [adv-dis]: https://www.dndbeyond.com/sources/dnd/basic-rules-2014/using-ability-scores#AdvantageandDisadvantage
+
+
+# Programming interface
+
+[`Closed`][Closed] is the main type for dicer expressions-
+"closed" because it reflects that all symbols
+are defined. `Closed` implements `FromStr`, so `str::parse` provides
+either a `Closed` or an error describing the problem with the expression.
+
+dicer requires an [`Evaluator`][Evaluator] to compute probability distributions.
+This is because dicer (optionally) [memoizes][memoization] intermediate and final results
+to speed up computation. Does it help? I don't know- no benchmarks yet!
+
+Evaluation is fallible (returns `Result<Distribution, Error>`).
+Some validity properties cannot be determined without partially evaluating the expression;
+for instance, dicer can only tell if a denominator can be zero by computing the denominator's distribution
+and checking the probability. Again, the error message _should_ indicate the problem;
+send [me] a message if you have ideas for improvement!
+
+The result of an evaluation is a [`Distribution`][Distribution].
+dicer internally represents results as _occurrences_: how many distinct rolls could
+lead to each value of an expression. These data are accessible via `Distribution`.
+
+dicer offers the [`html`][html] module for rendering results into HTML.
+While all of the content is valid HTML on its own, the output includes
+classes and variables for [Charts.css]-- a table will appear as a bar chart
+if Charts.css is present on the page.
+
+# See also
+
+[I][me] found [AnyDice] after mostly completing dicer; I might not have written dicer if I had known about it beforehand!
+AnyDice has a different language, but a similar/same goal.
+
+
+[AnyDice]: https://anydice.com
+[me]: https://cceckman.com
+[memoization]: https://en.wikipedia.org/wiki/Memoization
+[Charts.css]: https://chartscss.org

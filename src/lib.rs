@@ -1,23 +1,5 @@
 #![doc=include_str!("../README.md")]
 
-//! Utilities for working with dice notation.
-//!
-//! For example, here's the roll for:
-//! - A level 5 warlock with +5 Charisma modifier
-//! - with the Agonizing Blast feature
-//! - casting Eldritch Blast (two beams)
-//! - against a creature with armor class 16
-//! - including critical effects
-//!
-//! ```
-//! # use dicer::*;
-//! const ELDRITCH_BLAST : &'static str = "[AC: 16] [CHA: +5] 2([ATK: 1d20] (ATK = 20) * (2d10 + CHA) + (ATK < 20) * (ATK > 1) * (ATK + CHA >= AC) * (1d10 + CHA))";
-//! let expr: Closed = ELDRITCH_BLAST.parse().unwrap();
-//! let distr : Distribution = expr.distribution().unwrap();
-//! assert_eq!(distr.max(), 50); // Double crit success!
-//! assert_eq!(distr.min(), 0);  // Double crit failure!
-//! ```
-
 use std::collections::HashSet;
 
 use maud::PreEscaped;
