@@ -156,7 +156,7 @@ But the same attack roll will be used for the comparison with AC (`12`).
 
 Note how this is different from the (**incorrect**) expression:
 
-```
+```ignore
 (1d20 > 1) * (1d20 + 4 >= 12) * (1d4 + 1)
 ```
 
@@ -164,7 +164,7 @@ which treats the "critical miss" and "to-hit" expressions as independent rolls.
 
 We can further add [critical hits], where we roll an extra damage die on a 20:
 
-```
+```ignore
 [ATK: 1d20] (ATK = 20) * (2d4 + 1) + (ATK < 20) * (ATK > 1) * (ATK + 4 >= 12) * (1d4 + 1)
 ```
 
@@ -208,7 +208,7 @@ dicer ignores space, tabs, and newlines. That allows us to write a more complica
 > The kobold has an AC of 12. How much damage does T'paa do?
 
 
-```
+```ignore
 [MOD: +5] [PROFICIENCY: +3] [AC: 12]
 2 (
      [ATK: 2d20kl] [DIE: 1d10] [CRIT: 1d10] 

@@ -1,3 +1,5 @@
+#![doc=include_str!("../README.md")]
+
 //! Utilities for working with dice notation.
 //!
 //! For example, here's the roll for:
@@ -85,4 +87,30 @@ pub fn distribution_table_inner(input: String) -> Result<PreEscaped<String>, Err
     let res = res?;
 
     Ok(html::table_multi_dist(&res))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn readme_examples() {
+        // Manual rather than doctest, because it's also a normal .md file
+        for expr in [
+            "(1d20 + 4 >= 12) * (1d4 + 1)",
+            "[ATK: 1d20] (ATK + 4 >= 12) * (1d4 + 1)",
+            "[ATK: 1d20] (ATK > 1) * (ATK + 4 >= 12) * (1d4 + 1)",
+            "(1d20 > 1) * (1d20 + 4 >= 12) * (1d4 + 1)",
+            "[ATK: 1d20] (ATK = 20) * (2d4 + 1) + (ATK < 20) * (ATK > 1) * (ATK + 4 >= 12) * (1d4 + 1)",
+            "2([ATK: 1d20] (ATK = 20) * (2d4 + 1) + (ATK < 20) * (ATK > 1) * (ATK + 4 >= 12) * (1d4 + 1))",
+            r#"[MOD: +5] [PROFICIENCY: +3] [AC: 12]
+2 (
+     [ATK: 2d20kl] [DIE: 1d10] [CRIT: 1d10] 
+     (ATK = 20) * (DIE + CRIT + MOD) +
+     (ATK < 20) * (ATK > 1) (ATK + MOD + PROFICIENCY >= AC) * (DIE + MOD)
+)"#,
+        ] {
+            let _: Closed = expr.parse().unwrap();
+        }
+    }
 }
