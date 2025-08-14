@@ -1,4 +1,4 @@
-//! Dicer CLI.
+//! nice-dice CLI.
 //!
 //! Accepts a dice expression on stdin.
 //! Prints an HTML table to stdout, using classes from charts.css.
@@ -11,7 +11,7 @@ fn main() {
         .lock()
         .read_to_string(&mut input)
         .expect("failed to read input from stdin");
-    let figure = dicer::distribution_table_inner(input).unwrap();
+    let figure = nice_dice::distribution_table_inner(input).unwrap();
 
     let mut stdout = std::io::stdout().lock();
     write!(stdout, "{}", figure.into_string()).unwrap();
