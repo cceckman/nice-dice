@@ -4,5 +4,6 @@
 charts.css-*/
 charts.css-*.zip
 charts.css-*.tar.gz
+charts.min.css
 dist.dir
 clean

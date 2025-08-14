@@ -1,6 +1,6 @@
 set -eu
 
-redo-ifchange Cargo.toml Cargo.lock app.js demo.html charts.tar.gz
+redo-ifchange Cargo.toml Cargo.lock app.js demo.html charts.min.css
 find src -type f | xargs redo-ifchange
 
 wasm-pack build --target=web >&2
