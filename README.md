@@ -6,8 +6,8 @@ Specifically, it's designed to handle distributions from [Dungeons and Dragons][
 The expression language should support all rolls that one can make during play,
 though let [me] know if you find any gaps.
 
-If you're a player looking for how to write nice-dice expressions, you want the [Notation guide] section.
-If you're a programmer looking to use nice-dice in your sofware, skip down to the [programming interface] section.
+If you're a player looking for how to write nice-dice expressions, you want the [Notation guide](#notation-guide) section.
+If you're a programmer looking to use nice-dice in your sofware, skip down to the [programming interface](#programming-interface) section.
 
 
 # Notation guide

@@ -14,6 +14,7 @@ mod symbolic;
 pub mod html;
 pub use analysis::Closed;
 pub use discrete::{Distribution, Evaluator};
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[cfg(test)]
 mod properties;
@@ -44,6 +45,7 @@ fn list_symbols(s: &HashSet<Symbol>) -> String {
 /// Present the comma-separated expressions as a table, formatted as a column chart by Charts.css.
 ///
 /// Returns a string of HTML indicating. On error, returns HTML indicating the error.
+#[wasm_bindgen]
 pub fn distribution_table(input: String) -> String {
     match distribution_table_inner(input) {
         Ok(v) => v,

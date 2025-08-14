@@ -1,5 +1,5 @@
 [package]
-name = "nice-dice-wasm"
+name = "nice-dice-component"
 version = "0.1.0"
 edition = "2024"
 workspace = ".."

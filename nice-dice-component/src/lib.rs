@@ -1,3 +1,7 @@
+//! Component-model export of nice-dice.
+//!
+//! Since the component model isn't usable on the web (yet), this is not terribly useful.
+
 #[allow(warnings)]
 mod bindings;
 
