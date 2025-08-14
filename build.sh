@@ -1,10 +1,22 @@
 #!/bin/sh
 
-set -eu
+set -eux
 wasm-pack build --target=web >&2
 
-cp -r pkg/ ~/r/github.com/cceckman/web/static/writing/nice-dice/
-cp app.js ~/r/github.com/cceckman/web/static/writing/nice-dice/
-cp demo.html ~/r/github.com/cceckman/web/static/writing/nice-dice/
-mkdir -p ~/r/github.com/cceckman/web/static/writing/nice-dice/charts.css-1.1.0/dist
-cp charts.css-1.1.0/dist/charts.min.css ~/r/github.com/cceckman/web/static/writing/nice-dice/charts.css-1.1.0/dist/charts.min.css
+rm -rf dist/
+mkdir -p dist/
+
+rm pkg/.gitignore
+cp -r pkg/ dist/
+cp app.js dist/
+cp demo.html dist/
+
+CHARTS_VERSION="1.2.0"
+
+curl -fL "https://github.com/ChartsCSS/charts.css/archive/refs/tags/${CHARTS_VERSION}.tar.gz" \
+    -o charts.tar.gz
+tar -xvf charts.tar.gz
+cp charts.css-"${CHARTS_VERSION}"/dist/charts.min.css dist/charts.min.css
+
+rm -rf ~/r/github.com/cceckman/web/static/writing/nice-dice/
+cp -r dist ~/r/github.com/cceckman/web/static/writing/nice-dice
