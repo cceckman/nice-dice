@@ -1,4 +1,8 @@
 /target
 /pkg
-charts.css-1.1.0/
-charts.css-1.1.0.zip
+/dist
+charts.css-*/
+charts.css-*.zip
+charts.css-*.tar.gz
+dist.dir
+clean
