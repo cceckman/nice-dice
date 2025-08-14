@@ -1,18 +1,18 @@
-# dicer: probability distributions from dice notation
+# nice-dice: probability distributions from dice notation
 
-dicer is a library for computing probability distributions from [dice notation].
+nice-dice is a library for computing probability distributions from [dice notation].
 
 Specifically, it's designed to handle distributions from [Dungeons and Dragons][D&D], 5th edition.
 The expression language should support all rolls that one can make during play,
 though let [me] know if you find any gaps.
 
-If you're a player looking for how to write dicer expressions, you want the [Notation guide] section.
-If you're a programmer looking to use dicer in your sofware, skip down to the [programming interface] section.
+If you're a player looking for how to write nice-dice expressions, you want the [Notation guide] section.
+If you're a programmer looking to use nice-dice in your sofware, skip down to the [programming interface] section.
 
 
 # Notation guide
 
-dicer uses a [dice notation] that should be familiar to players of D&D. The quick version:
+nice-dice uses a [dice notation] that should be familiar to players of D&D. The quick version:
 
 | Expression type | Examples | Notes |
 | --- | --- | --- |
@@ -67,7 +67,7 @@ rolling those values and performing the addition:
 
 Often, [D&D] will ask you to roll more than one of the same die.
 For instance, 5th-level caster who hits with _firebolt_ will roll
-two ten-sided dice for damage. dicer follows the standard notation for this,
+two ten-sided dice for damage. nice-dice follows the standard notation for this,
 `2d10`.
 
 In some cases, the game requires rolling multiple dice but only keeping some results.
@@ -78,7 +78,7 @@ to reflect this: `2d20kh` represents a roll with advantage, `2d20kl` a roll with
 The "keep" suffix can also have a number of rolls to keep.
 When [rolling for ability scores](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/step-by-step-characters#3DetermineAbilityScores),
 a player rolls `4d6`, keeps the highest three rolls, and sums them;
-dicer recognizes `4d6kh3` for this roll.
+nice-dice recognizes `4d6kh3` for this roll.
 
 ## Signs, arithemtic, and parentheses
 
@@ -104,7 +104,7 @@ As in math class, `2 × (1+1)` is `4`, and `2 × 1 + 1` is `3`.
 
 Here's where things get complicated!
 
-dicer supports _comparison expressions_ such as `d10 > 5`.
+nice-dice supports _comparison expressions_ such as `d10 > 5`.
 
 More generally, comparison expressions are of the form `A op B`,
 where `A` and `B` are expressions and `op` is an operator:
@@ -157,7 +157,7 @@ In the above example, we ignored critical hits, because they require multiple co
 - Is the attack roll, plus modifiers, greater than or equal to the target AC? (Hit)
 - Is the attack roll, plus modifiers, less than the target AC? (Miss)
 
-To accomplish this, dicer allows _bindings_: assigning a name to an expression, then using the _same result_ for that expression in multiple places.
+To accomplish this, nice-dice allows _bindings_: assigning a name to an expression, then using the _same result_ for that expression in multiple places.
 The binding syntax is `[NAME: roll] remainder`, where `NAME` is the name to assign, `roll` is the expression to give that name to, and `remainder`
 is the expression to use the name in. In `remainder`, `NAME` stands in as the result of that roll.
 
@@ -217,7 +217,7 @@ Some caveats:
 
 ## Space, and a final example
 
-dicer ignores space, tabs, and newlines. That allows us to write a more complicated expression:
+nice-dice ignores space, tabs, and newlines. That allows us to write a more complicated expression:
 
 > T'paa is frustrated with this kobold, and lashes out [with _eldritch blast_].
 >
@@ -241,7 +241,7 @@ dicer ignores space, tabs, and newlines. That allows us to write a more complica
 
 ## Unsupported expressions
 
-dicer deals only with finite distributions, not exploding dice.
+nice-dice deals only with finite distributions, not exploding dice.
 (If you want explosions, try [AnyDice](https://anydice.com), which takes a different approach.)
 
 
@@ -255,33 +255,33 @@ dicer deals only with finite distributions, not exploding dice.
 
 # Programming interface
 
-[`Closed`][Closed] is the main type for dicer expressions-
+[`Closed`][Closed] is the main type for nice-dice expressions-
 "closed" because it reflects that all symbols
 are defined. `Closed` implements `FromStr`, so `str::parse` provides
 either a `Closed` or an error describing the problem with the expression.
 
-dicer requires an [`Evaluator`][Evaluator] to compute probability distributions.
-This is because dicer (optionally) [memoizes][memoization] intermediate and final results
+nice-dice requires an [`Evaluator`][Evaluator] to compute probability distributions.
+This is because nice-dice (optionally) [memoizes][memoization] intermediate and final results
 to speed up computation. Does it help? I don't know- no benchmarks yet!
 
 Evaluation is fallible (returns `Result<Distribution, Error>`).
 Some validity properties cannot be determined without partially evaluating the expression;
-for instance, dicer can only tell if a denominator can be zero by computing the denominator's distribution
+for instance, nice-dice can only tell if a denominator can be zero by computing the denominator's distribution
 and checking the probability. Again, the error message _should_ indicate the problem;
 send [me] a message if you have ideas for improvement!
 
 The result of an evaluation is a [`Distribution`][Distribution].
-dicer internally represents results as _occurrences_: how many distinct rolls could
+nice-dice internally represents results as _occurrences_: how many distinct rolls could
 lead to each value of an expression. These data are accessible via `Distribution`.
 
-dicer offers the [`html`][html] module for rendering results into HTML.
+nice-dice offers the [`html`][html] module for rendering results into HTML.
 While all of the content is valid HTML on its own, the output includes
 classes and variables for [Charts.css]-- a table will appear as a bar chart
 if Charts.css is present on the page.
 
 # See also
 
-[I][me] found [AnyDice] after mostly completing dicer; I might not have written dicer if I had known about it beforehand!
+[I][me] found [AnyDice] after mostly completing nice-dice; I might not have written nice-dice if I had known about it beforehand!
 AnyDice has a different language, but a similar/same goal.
 
 

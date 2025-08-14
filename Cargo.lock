@@ -36,27 +36,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
 
 [[package]]
-name = "dicer"
-version = "0.1.0"
-dependencies = [
- "itertools",
- "maud",
- "num",
- "peg",
- "proptest",
- "proptest-derive",
- "thiserror",
-]
-
-[[package]]
-name = "dicer-wasm"
-version = "0.1.0"
-dependencies = [
- "dicer",
- "wit-bindgen-rt 0.43.0",
-]
-
-[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -149,6 +128,27 @@ dependencies = [
  "proc-macro2-diagnostics",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "nice-dice"
+version = "0.1.0"
+dependencies = [
+ "itertools",
+ "maud",
+ "num",
+ "peg",
+ "proptest",
+ "proptest-derive",
+ "thiserror",
+]
+
+[[package]]
+name = "nice-dice-wasm"
+version = "0.1.0"
+dependencies = [
+ "nice-dice",
+ "wit-bindgen-rt 0.43.0",
 ]
 
 [[package]]

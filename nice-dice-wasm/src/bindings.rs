@@ -5,9 +5,9 @@
 #[allow(dead_code, clippy::all)]
 pub mod exports {
     pub mod cceckman {
-        pub mod dicer {
+        pub mod nice_dice {
             #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-            pub mod dicer {
+            pub mod nice_dice {
                 #[used]
                 #[doc(hidden)]
                 static __FORCE_SECTION_REF: fn() = super::super::super::super::__link_custom_section_describing_imports;
@@ -209,7 +209,9 @@ pub mod exports {
                         unreachable!();
                         #[cfg(target_arch = "wasm32")]
                         {
-                            #[link(wasm_import_module = "[export]cceckman:dicer/dicer")]
+                            #[link(
+                                wasm_import_module = "[export]cceckman:nice-dice/nice-dice"
+                            )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-drop]distribution"]
                                 fn drop(_: u32);
@@ -331,7 +333,9 @@ pub mod exports {
                         unreachable!();
                         #[cfg(target_arch = "wasm32")]
                         {
-                            #[link(wasm_import_module = "[export]cceckman:dicer/dicer")]
+                            #[link(
+                                wasm_import_module = "[export]cceckman:nice-dice/nice-dice"
+                            )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-drop]expression"]
                                 fn drop(_: u32);
@@ -455,7 +459,9 @@ pub mod exports {
                         unreachable!();
                         #[cfg(target_arch = "wasm32")]
                         {
-                            #[link(wasm_import_module = "[export]cceckman:dicer/dicer")]
+                            #[link(
+                                wasm_import_module = "[export]cceckman:nice-dice/nice-dice"
+                            )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-drop]evaluator"]
                                 fn drop(_: u32);
@@ -630,7 +636,9 @@ pub mod exports {
                         }
                         #[cfg(target_arch = "wasm32")]
                         {
-                            #[link(wasm_import_module = "[export]cceckman:dicer/dicer")]
+                            #[link(
+                                wasm_import_module = "[export]cceckman:nice-dice/nice-dice"
+                            )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-new]distribution"]
                                 fn new(_: *mut u8) -> u32;
@@ -650,7 +658,9 @@ pub mod exports {
                         }
                         #[cfg(target_arch = "wasm32")]
                         {
-                            #[link(wasm_import_module = "[export]cceckman:dicer/dicer")]
+                            #[link(
+                                wasm_import_module = "[export]cceckman:nice-dice/nice-dice"
+                            )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-rep]distribution"]
                                 fn rep(_: u32) -> *mut u8;
@@ -672,7 +682,9 @@ pub mod exports {
                         }
                         #[cfg(target_arch = "wasm32")]
                         {
-                            #[link(wasm_import_module = "[export]cceckman:dicer/dicer")]
+                            #[link(
+                                wasm_import_module = "[export]cceckman:nice-dice/nice-dice"
+                            )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-new]expression"]
                                 fn new(_: *mut u8) -> u32;
@@ -692,7 +704,9 @@ pub mod exports {
                         }
                         #[cfg(target_arch = "wasm32")]
                         {
-                            #[link(wasm_import_module = "[export]cceckman:dicer/dicer")]
+                            #[link(
+                                wasm_import_module = "[export]cceckman:nice-dice/nice-dice"
+                            )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-rep]expression"]
                                 fn rep(_: u32) -> *mut u8;
@@ -714,7 +728,9 @@ pub mod exports {
                         }
                         #[cfg(target_arch = "wasm32")]
                         {
-                            #[link(wasm_import_module = "[export]cceckman:dicer/dicer")]
+                            #[link(
+                                wasm_import_module = "[export]cceckman:nice-dice/nice-dice"
+                            )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-new]evaluator"]
                                 fn new(_: *mut u8) -> u32;
@@ -734,7 +750,9 @@ pub mod exports {
                         }
                         #[cfg(target_arch = "wasm32")]
                         {
-                            #[link(wasm_import_module = "[export]cceckman:dicer/dicer")]
+                            #[link(
+                                wasm_import_module = "[export]cceckman:nice-dice/nice-dice"
+                            )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-rep]evaluator"]
                                 fn rep(_: u32) -> *mut u8;
@@ -751,23 +769,23 @@ pub mod exports {
                     ) -> Result<_rt::String, Error>;
                 }
                 #[doc(hidden)]
-                macro_rules! __export_cceckman_dicer_dicer_cabi {
+                macro_rules! __export_cceckman_nice_dice_nice_dice_cabi {
                     ($ty:ident with_types_in $($path_to_types:tt)*) => {
                         const _ : () = { #[unsafe (export_name =
-                        "cceckman:dicer/dicer#parse")] unsafe extern "C" fn
+                        "cceckman:nice-dice/nice-dice#parse")] unsafe extern "C" fn
                         export_parse(arg0 : * mut u8, arg1 : usize,) -> * mut u8 { unsafe
                         { $($path_to_types)*:: _export_parse_cabi::<$ty > (arg0, arg1) }
                         } #[unsafe (export_name =
-                        "cabi_post_cceckman:dicer/dicer#parse")] unsafe extern "C" fn
-                        _post_return_parse(arg0 : * mut u8,) { unsafe {
+                        "cabi_post_cceckman:nice-dice/nice-dice#parse")] unsafe extern
+                        "C" fn _post_return_parse(arg0 : * mut u8,) { unsafe {
                         $($path_to_types)*:: __post_return_parse::<$ty > (arg0) } }
                         #[unsafe (export_name =
-                        "cceckman:dicer/dicer#[constructor]evaluator")] unsafe extern "C"
-                        fn export_constructor_evaluator() -> i32 { unsafe {
+                        "cceckman:nice-dice/nice-dice#[constructor]evaluator")] unsafe
+                        extern "C" fn export_constructor_evaluator() -> i32 { unsafe {
                         $($path_to_types)*:: _export_constructor_evaluator_cabi::<<$ty as
                         $($path_to_types)*:: Guest >::Evaluator > () } } #[unsafe
                         (export_name =
-                        "cceckman:dicer/dicer#[method]evaluator.render-distribution-table")]
+                        "cceckman:nice-dice/nice-dice#[method]evaluator.render-distribution-table")]
                         unsafe extern "C" fn
                         export_method_evaluator_render_distribution_table(arg0 : * mut
                         u8, arg1 : * mut u8, arg2 : usize,) -> * mut u8 { unsafe {
@@ -775,31 +793,31 @@ pub mod exports {
                         _export_method_evaluator_render_distribution_table_cabi::<<$ty as
                         $($path_to_types)*:: Guest >::Evaluator > (arg0, arg1, arg2) } }
                         #[unsafe (export_name =
-                        "cabi_post_cceckman:dicer/dicer#[method]evaluator.render-distribution-table")]
+                        "cabi_post_cceckman:nice-dice/nice-dice#[method]evaluator.render-distribution-table")]
                         unsafe extern "C" fn
                         _post_return_method_evaluator_render_distribution_table(arg0 : *
                         mut u8,) { unsafe { $($path_to_types)*::
                         __post_return_method_evaluator_render_distribution_table::<<$ty
                         as $($path_to_types)*:: Guest >::Evaluator > (arg0) } } const _ :
                         () = { #[doc(hidden)] #[unsafe (export_name =
-                        "cceckman:dicer/dicer#[dtor]distribution")]
+                        "cceckman:nice-dice/nice-dice#[dtor]distribution")]
                         #[allow(non_snake_case)] unsafe extern "C" fn dtor(rep : * mut
                         u8) { unsafe { $($path_to_types)*:: Distribution::dtor::< <$ty as
                         $($path_to_types)*:: Guest >::Distribution > (rep) } } }; const _
                         : () = { #[doc(hidden)] #[unsafe (export_name =
-                        "cceckman:dicer/dicer#[dtor]expression")]
+                        "cceckman:nice-dice/nice-dice#[dtor]expression")]
                         #[allow(non_snake_case)] unsafe extern "C" fn dtor(rep : * mut
                         u8) { unsafe { $($path_to_types)*:: Expression::dtor::< <$ty as
                         $($path_to_types)*:: Guest >::Expression > (rep) } } }; const _ :
                         () = { #[doc(hidden)] #[unsafe (export_name =
-                        "cceckman:dicer/dicer#[dtor]evaluator")] #[allow(non_snake_case)]
-                        unsafe extern "C" fn dtor(rep : * mut u8) { unsafe {
-                        $($path_to_types)*:: Evaluator::dtor::< <$ty as
+                        "cceckman:nice-dice/nice-dice#[dtor]evaluator")]
+                        #[allow(non_snake_case)] unsafe extern "C" fn dtor(rep : * mut
+                        u8) { unsafe { $($path_to_types)*:: Evaluator::dtor::< <$ty as
                         $($path_to_types)*:: Guest >::Evaluator > (rep) } } }; };
                     };
                 }
                 #[doc(hidden)]
-                pub(crate) use __export_cceckman_dicer_dicer_cabi;
+                pub(crate) use __export_cceckman_nice_dice_nice_dice_cabi;
                 #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                 #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                 struct _RetArea(
@@ -934,26 +952,26 @@ mod _rt {
 /// ```
 #[allow(unused_macros)]
 #[doc(hidden)]
-macro_rules! __export_dicer_wasm_impl {
+macro_rules! __export_nice_dice_wasm_impl {
     ($ty:ident) => {
         self::export!($ty with_types_in self);
     };
     ($ty:ident with_types_in $($path_to_types_root:tt)*) => {
         $($path_to_types_root)*::
-        exports::cceckman::dicer::dicer::__export_cceckman_dicer_dicer_cabi!($ty
-        with_types_in $($path_to_types_root)*:: exports::cceckman::dicer::dicer);
+        exports::cceckman::nice_dice::nice_dice::__export_cceckman_nice_dice_nice_dice_cabi!($ty
+        with_types_in $($path_to_types_root)*:: exports::cceckman::nice_dice::nice_dice);
     };
 }
 #[doc(inline)]
-pub(crate) use __export_dicer_wasm_impl as export;
+pub(crate) use __export_nice_dice_wasm_impl as export;
 #[cfg(target_arch = "wasm32")]
 #[unsafe(
-    link_section = "component-type:wit-bindgen:0.41.0:cceckman:dicer:dicer-wasm:encoded world"
+    link_section = "component-type:wit-bindgen:0.41.0:cceckman:nice-dice:nice-dice-wasm:encoded world"
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 528] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x8f\x03\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 548] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x9f\x03\x01A\x02\x01\
 A\x02\x01B\x14\x01m\x07\x05parse\x0enegative-count\x0ckeep-too-few\x0edivide-by-\
 zero\x0einvalid-symbol\x0funbound-symbols\x0ezero-faced-die\x04\0\x0aerror-code\x03\
 \0\0\x01r\x02\x04code\x01\x07messages\x04\0\x05error\x03\0\x02\x04\0\x0cdistribu\
@@ -961,9 +979,10 @@ tion\x03\x01\x04\0\x0aexpression\x03\x01\x04\0\x09evaluator\x03\x01\x01i\x06\x01
 @\0\0\x07\x04\0\x16[constructor]evaluator\x01\x08\x01h\x06\x01h\x05\x01p\x0a\x01\
 j\x01s\x01\x03\x01@\x02\x04self\x09\x05exprs\x0b\0\x0c\x04\0+[method]evaluator.r\
 ender-distribution-table\x01\x0d\x01i\x05\x01j\x01\x0e\x01\x03\x01@\x01\x04texts\
-\0\x0f\x04\0\x05parse\x01\x10\x04\0\x14cceckman:dicer/dicer\x05\0\x04\0\x19cceck\
-man:dicer/dicer-wasm\x04\0\x0b\x10\x01\0\x0adicer-wasm\x03\0\0\0G\x09producers\x01\
-\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\0\x0f\x04\0\x05parse\x01\x10\x04\0\x1ccceckman:nice-dice/nice-dice\x05\0\x04\0!\
+cceckman:nice-dice/nice-dice-wasm\x04\0\x0b\x14\x01\0\x0enice-dice-wasm\x03\0\0\0\
+G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
+n-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

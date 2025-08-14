@@ -1,8 +1,8 @@
 [workspace]
-members = [".", "./dicer-wasm"]
+members = [".", "./nice-dice-wasm"]
 
 [package]
-name = "dicer"
+name = "nice-dice"
 version = "0.1.0"
 edition = "2024"
 

@@ -1,6 +1,6 @@
-package cceckman:dicer;
+package cceckman:nice-dice;
 
-interface dicer {
+interface nice-dice {
     enum error-code {
         parse,
         negative-count,
@@ -38,6 +38,6 @@ interface dicer {
 
 
 
-world dicer-wasm {
-    export dicer;
+world nice-dice-wasm {
+    export nice-dice;
 }
