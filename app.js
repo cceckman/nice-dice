@@ -1,4 +1,4 @@
-import init, { distribution_table } from "./pkg/dicer.js";
+import init, { distribution_table } from "./pkg/nice-dice.js";
 
 async function run() {
     await init(); // wasm_bindgen-provided
