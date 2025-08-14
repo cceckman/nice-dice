@@ -1,4 +1,4 @@
-import init, { distribution_table } from "./pkg/nice-dice.js";
+import init, { distribution_table } from "./pkg/nice_dice.js";
 
 async function run() {
     await init(); // wasm_bindgen-provided
@@ -10,9 +10,10 @@ async function run() {
     input.addEventListener("submit", (e) => {
         e.preventDefault()
 
-        // TODO: Can we have this run async?
-        let result = distribution_table(formula.value);
-        parsed.innerHTML = result;
+        distribution_table(formula.value).then((result) => {
+            ;
+            parsed.innerHTML = result;
+        });
     })
 
     for (const example of document.querySelectorAll(".example")) {

@@ -46,7 +46,7 @@ fn list_symbols(s: &HashSet<Symbol>) -> String {
 ///
 /// Returns a string of HTML indicating. On error, returns HTML indicating the error.
 #[wasm_bindgen]
-pub fn distribution_table(input: String) -> String {
+pub async fn distribution_table(input: String) -> String {
     match distribution_table_inner(input) {
         Ok(v) => v,
         Err(e) => maud::html!(
